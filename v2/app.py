@@ -9,10 +9,10 @@ import scripts as sts
 
 
 
-def save_excel_on_server(workbook, base_dir):
+def save_excel_on_server(workbook, base_dir, regnum = ''):
     # Format the current date
     date_str = datetime.now().strftime('%d/%m/%Y')
-    filename = f"Реестр от {date_str}.xlsx"
+    filename = f"Реестр{regnum} от {date_str}.xlsx"
 
     # Ensure there's a directory to save the file in
     save_dir = os.path.join(base_dir, 'saves')
@@ -39,6 +39,8 @@ def form_excel():
     json_data = request.get_json(force=True)
 
     payment_documents = json_data.get('request', [])
+    fe = payment_documents[0].get('0', '') # temporary variable
+    regnum = fe.get('registry_number', '').strip('РЕЕСТР ПЛАТЕЖЕЙ') # registry number
 
     sorted_payment_documents = sorted(payment_documents, key=lambda x: x.get('object_name', ''))
 
@@ -49,7 +51,7 @@ def form_excel():
     workbook = format_excel_inner(json_data)
 
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    filename = save_excel_on_server(workbook, base_dir)
+    filename = save_excel_on_server(workbook, base_dir, regnum)
 
      # Construct a download URL or simply return the filename
     download_url = f"http://192.168.30.19:25351/saves/{filename}"

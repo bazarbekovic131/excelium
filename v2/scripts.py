@@ -62,7 +62,7 @@ def read_json():
     Component of the testing module
     '''
 
-    with open('tests/model.json', 'r') as file:
+    with open('v2/tests/model.json', 'r') as file:
         json_data = json.load(file)
 
         payment_documents = json_data.get('request', [])
