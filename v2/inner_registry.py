@@ -1,4 +1,3 @@
-import os
 from datetime import datetime
 import logging
 from shutil import copy2
@@ -6,30 +5,22 @@ from scripts import format_row, set_border, find_last_row_in_col, load_excel, hi
 import openpyxl
 from openpyxl.styles import Alignment, Font, Border, Side
 
-def create_excel():
-    '''
-    This function creates a copy of excel.
-    '''
-    # Weg def.
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    template_path = os.path.join(base_dir, 'template.xlsx')
-    saves_dir = os.path.join(base_dir, 'saves')
 
-    #Create a folder IFF empty
-    if not os.path.exists(saves_dir):
-        os.makedirs(saves_dir)
-
-    # Create a unique copy of the template
-    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-    copy_path = os.path.join(saves_dir, f'REESTR_PLATEZHEJ_{timestamp}.xlsx')
-    copy2(template_path, copy_path)
 
 def add_coordinators(sheet):
     '''
-    example: ac_1(ab2, [sss])
+    Adds coordinators to the specified sheet.
+
+    Args:
+        sheet (openpyxl.worksheet.worksheet.Worksheet): The worksheet to add coordinators to.
+
+    Returns:
+        None
     '''
 
     col_index = 6 #F
+    formula_f = '=IF(ISNUMBER(VALUE(INDIRECT("B" & ROW()))), VLOOKUP(VALUE(INDIRECT("B" & ROW())), СПР_ПОДПИСАНТОВ!$B$14:$K$100, 9, 0) & " " & VLOOKUP(VALUE(INDIRECT("B" & ROW())), СПР_ПОДПИСАНТОВ!$B$14:$K$100, 7, 0), "")'
+    formula_i = '=IF(ISNUMBER(VALUE(INDIRECT("B" & ROW()))), VLOOKUP(VALUE(INDIRECT("B" & ROW())), СПР_ПОДПИСАНТОВ!$B$14:$K$100, 5, 0), "")'
 
     final_row = find_last_row_in_col(sheet, col_index)
 
@@ -42,40 +33,37 @@ def add_coordinators(sheet):
     for i in range(1,8):
         # Calculate the current row
         row = final_row + i * 3 # it was i*2
+        formula_b = f'=INDEX(СПР_ОБЪЕКТОВ!$B$7:$K$80, MATCH($G11, СПР_ОБЪЕКТОВ!$B$7:$B$80, 0), {3 + i})'
 
         # Add thin borders to cell B{row}
-        formula_b = f'=INDEX(СПР_ОБЪЕКТОВ!$B$7:$K$80, MATCH($G11, СПР_ОБЪЕКТОВ!$B$7:$B$80, 0), {3 + i})'
         sheet.cell(row=row, column=2, value=formula_b)
         sheet.cell(row=row, column=2).border = set_border('thin')
 
         # Add formula to cell F{row}
-        formula_f = '=IF(ISNUMBER(VALUE(INDIRECT("B" & ROW()))), VLOOKUP(VALUE(INDIRECT("B" & ROW())), СПР_ПОДПИСАНТОВ!$B$14:$K$100, 9, 0) & " " & VLOOKUP(VALUE(INDIRECT("B" & ROW())), СПР_ПОДПИСАНТОВ!$B$14:$K$100, 7, 0), "")'
-
         sheet.cell(row=row, column=6, value=formula_f)
         sheet.cell(row=row, column=6).alignment = Alignment(horizontal='left')
         sheet.cell(row=row, column=6).font = Font(size=14, bold=True)
 
         # Add formula to cell I{row}
-        formula_i = '=IF(ISNUMBER(VALUE(INDIRECT("B" & ROW()))), VLOOKUP(VALUE(INDIRECT("B" & ROW())), СПР_ПОДПИСАНТОВ!$B$14:$K$100, 5, 0), "")'
         sheet.cell(row=row, column=9, value=formula_i)
         sheet.cell(row=row, column=6).alignment = Alignment(horizontal='left')
         sheet.cell(row=row, column=6).font = Font(bold=True, size = 14)
 
     # Add the word "СОГЛАСОВАНО" in cell F{row + 2}
     last_row = final_row + 16  # Assuming the last row in the cycle is 16 rows from the starting row
-    sheet.cell(row=last_row, column=6, value="СОГЛАСОВАНО")
-    sheet.cell(row=last_row, column=6).font = Font(bold=True)
+    sheet.cell(row=last_row+1, column=6, value="СОГЛАСОВАНО")
+    sheet.cell(row=last_row+1, column=6).font = Font(bold=True)
 
-    sheet.cell(row=last_row + 2, column=2, value=3)
-    sheet.cell(row=last_row + 2, column=2).border = set_border('thin')
+    sheet.cell(row=last_row + 3, column=2, value=3)
+    sheet.cell(row=last_row + 3, column=2).border = set_border('thin')
 
-    sheet.cell(row=last_row + 2, column=6, value=formula_f)
-    sheet.cell(row=last_row + 2, column=6).alignment = Alignment(horizontal='left')
-    sheet.cell(row=last_row + 2, column=6).font = Font(bold = True, size = 14)
+    sheet.cell(row=last_row + 3, column=6, value=formula_f)
+    sheet.cell(row=last_row + 3, column=6).alignment = Alignment(horizontal='left')
+    sheet.cell(row=last_row + 3, column=6).font = Font(bold = True, size = 14)
 
-    sheet.cell(row=last_row + 2, column=9, value=formula_i)
-    sheet.cell(row=last_row + 2, column=9).alignment = Alignment(horizontal='left')
-    sheet.cell(row=last_row + 2, column=9).font = Font(bold = True, size = 14)
+    sheet.cell(row=last_row + 3, column=9, value=formula_i)
+    sheet.cell(row=last_row + 3, column=9).alignment = Alignment(horizontal='left')
+    sheet.cell(row=last_row + 3, column=9).font = Font(bold = True, size = 14)
 
 def loop_json(json_data, workbook):
     '''

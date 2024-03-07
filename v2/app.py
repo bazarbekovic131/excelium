@@ -3,7 +3,7 @@ from flask_cors import CORS  # Import CORS
 import os
 from datetime import datetime, timedelta
 import logging
-from outer_registry import add_coordinators_outer, format_excel_outer
+from outer_registry import format_excel_outer
 from inner_registry import format_excel_inner
 import scripts as sts
 
@@ -76,6 +76,16 @@ def form_excel_outer():
 
 @app.route('/saves/<filename>', methods = ['GET'])
 def download_file(filename):
+    '''
+    Downloads a file from the 'saves' directory.
+
+    Args:
+        filename (str): The name of the file to be downloaded.
+
+    Returns:
+        Response: The file to be downloaded as an attachment.
+
+    '''
     base_dir = os.path.dirname(os.path.abspath(__file__))
     directory = os.path.join(base_dir, 'saves')
     return send_from_directory(directory, filename, as_attachment=True)
@@ -104,6 +114,13 @@ def delete_file(directory, age_days = 14):
                 os.remove(file_path)
                 print(f'Deleted {filename}.')
 
+@app.route('/split_workbook/<filename>', methods=['GET'])
+def split_workbook_route(filename):
+    sts.split_workbook(filename)
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    directory = os.path.join(base_dir, 'zips')
+    return send_from_directory(directory, filename, as_attachment=True)
 
 
 if __name__ == '__main__':

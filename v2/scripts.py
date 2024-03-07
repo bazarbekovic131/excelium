@@ -2,6 +2,9 @@ from openpyxl.styles import Border, Side, Font, Alignment, PatternFill
 import openpyxl
 import json
 from datetime import datetime
+import zipfile
+import os
+
 
 def set_border(style):
     border = Border(left=Side(style=style),
@@ -33,6 +36,33 @@ def format_row(sheet, row_number, columns):
         cell.border = border
         cell.alignment = alignment
         # cell.fill = yellow_fill # This style was discarded
+
+def set_cell_properties(sheet, row, column, value, border=None, alignment=None, font=None):
+    '''
+
+    Needs to be integrated into inner registry
+    Sets the properties of a cell in a given sheet.
+
+    Parameters:
+    - sheet: The sheet object where the cell is located.
+    - row: The row index of the cell.
+    - column: The column index of the cell.
+    - value: The value to be set in the cell.
+    - border: (optional) The border style to be applied to the cell.
+    - alignment: (optional) The alignment style to be applied to the cell.
+    - font: (optional) The font style to be applied to the cell.
+
+    Returns:
+    - None
+    '''
+
+    cell = sheet.cell(row=row, column=column, value=value)
+    if border:
+        cell.border = border
+    if alignment:
+        cell.alignment = alignment
+    if font:
+        cell.font = font
 
 def hide_sheets(ab, ss):
     for s in ss:
@@ -162,3 +192,31 @@ def add_colontituls(sheet):
 def set_print_area(sheet):
     last_row = find_last_row_in_col(sheet,6)
     sheet.print_area = f'F1:I{last_row}'
+
+def split_workbook(filename):
+    '''
+    This function splits the workbook into separate files and then zips them
+    into a single file. It also deletes the files after they are added to the zip
+
+    :param filename: The name of the file to be split
+    '''
+    workbook = load_excel(f'saves/{filename}') # load a workbook
+    filenames = [] # for the future filenames
+    date_str = datetime.now().strftime('%d/%m/%Y_%H%M%S') # Format the current date
+
+    for sheet in workbook.sheetnames:
+        new_workbook = load_excel('template.xlsx')
+        new_workbook.remove(new_workbook.active)
+        new_workbook.add_sheet(workbook[sheet])
+        new_workbook.save(f'saves/{sheet}_{date_str}.xlsx')
+        filenames.append(f'saves/{sheet}_{date_str}.xlsx')
+
+    filename.rstrip('.xlsx') # Remove .xlsx from the filename
+
+    with zipfile.ZipFile(f'zips/{filename}.zip', 'a') as zipf:
+        for file in filenames:
+            zipf.write(file)
+
+    # Delete the files after they are added to the zip
+    for file in filenames:
+        os.remove(file)
