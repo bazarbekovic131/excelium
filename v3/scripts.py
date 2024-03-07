@@ -200,23 +200,30 @@ def split_workbook(filename):
 
     :param filename: The name of the file to be split
     '''
+
+    initial_sheets = ['REESTR', 'СПР_ОБЪЕКТОВ', 'СПР_ПОДПИСАНТОВ']
+
     workbook = load_excel(f'saves/{filename}') # load a workbook
     filenames = [] # for the future filenames
     date_str = datetime.now().strftime('%d/%m/%Y_%H%M%S') # Format the current date
 
     for sheet in workbook.sheetnames:
-        new_workbook = load_excel('template.xlsx')
-        new_workbook.remove(new_workbook.active)
-        new_workbook.add_sheet(workbook[sheet])
-        new_workbook.save(f'saves/{sheet}_{date_str}.xlsx')
-        filenames.append(f'saves/{sheet}_{date_str}.xlsx')
+        # if the sheet name is not in initial sheets
+        if sheet not in initial_sheets:
+            new_workbook = load_excel('template.xlsx')
+            new_workbook.remove(new_workbook.active)
+            new_workbook.add_sheet(workbook[sheet])
+            new_workbook.save(f'saves/{sheet}_{date_str}.xlsx')
+            filenames.append(f'saves/{sheet}_{date_str}.xlsx')
 
     filename.rstrip('.xlsx') # Remove .xlsx from the filename
-
-    with zipfile.ZipFile(f'zips/{filename}.zip', 'a') as zipf:
+    zipname = f'zips/{filename}.zip'
+    with zipfile.ZipFile(zipname, 'a') as zipf:
         for file in filenames:
             zipf.write(file)
-
+    
     # Delete the files after they are added to the zip
     for file in filenames:
         os.remove(file)
+
+    return zipname

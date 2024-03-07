@@ -1,7 +1,7 @@
 from datetime import datetime
 import logging
 from shutil import copy2
-from scripts import format_row, set_border, find_last_row_in_col, load_excel, hide_sheets, create_concatenated_info, set_print_area
+from scripts import format_row, set_border, find_last_row_in_col, load_excel, hide_sheets, create_concatenated_info, set_print_area, add_colontituls, set_cell_properties
 import openpyxl
 from openpyxl.styles import Alignment, Font, Border, Side
 
@@ -31,39 +31,17 @@ def add_coordinators(sheet):
 
     # Loop through the specified rows (8 times)
     for i in range(1,8):
-        # Calculate the current row
-        row = final_row + i * 3 # it was i*2
-        formula_b = f'=INDEX(СПР_ОБЪЕКТОВ!$B$7:$K$80, MATCH($G11, СПР_ОБЪЕКТОВ!$B$7:$B$80, 0), {3 + i})'
+        formula_b = '=INDEX(СПР_ОБЪЕКТОВ!$B$7:$K$80, MATCH($G11, СПР_ОБЪЕКТОВ!$B$7:$B$80, 0), {3 + i})'
+        row = final_row + i * 3
+        set_cell_properties(sheet, row, 2, formula_b, set_border('thin'))
+        set_cell_properties(sheet, row, 6, formula_f, None, Alignment(horizontal='left'), Font(size=14, bold=True))
+        set_cell_properties(sheet, row, 9, formula_i, None, Alignment(horizontal='right'), Font(size=14, bold=True))
 
-        # Add thin borders to cell B{row}
-        sheet.cell(row=row, column=2, value=formula_b)
-        sheet.cell(row=row, column=2).border = set_border('thin')
-
-        # Add formula to cell F{row}
-        sheet.cell(row=row, column=6, value=formula_f)
-        sheet.cell(row=row, column=6).alignment = Alignment(horizontal='left')
-        sheet.cell(row=row, column=6).font = Font(size=14, bold=True)
-
-        # Add formula to cell I{row}
-        sheet.cell(row=row, column=9, value=formula_i)
-        sheet.cell(row=row, column=6).alignment = Alignment(horizontal='left')
-        sheet.cell(row=row, column=6).font = Font(bold=True, size = 14)
-
-    # Add the word "СОГЛАСОВАНО" in cell F{row + 2}
-    last_row = final_row + 16  # Assuming the last row in the cycle is 16 rows from the starting row
-    sheet.cell(row=last_row+1, column=6, value="СОГЛАСОВАНО")
-    sheet.cell(row=last_row+1, column=6).font = Font(bold=True)
-
-    sheet.cell(row=last_row + 3, column=2, value=3)
-    sheet.cell(row=last_row + 3, column=2).border = set_border('thin')
-
-    sheet.cell(row=last_row + 3, column=6, value=formula_f)
-    sheet.cell(row=last_row + 3, column=6).alignment = Alignment(horizontal='left')
-    sheet.cell(row=last_row + 3, column=6).font = Font(bold = True, size = 14)
-
-    sheet.cell(row=last_row + 3, column=9, value=formula_i)
-    sheet.cell(row=last_row + 3, column=9).alignment = Alignment(horizontal='left')
-    sheet.cell(row=last_row + 3, column=9).font = Font(bold = True, size = 14)
+    last_row = final_row + 17
+    set_cell_properties(sheet, last_row, 6, "СОГЛАСОВАНО", None, Alignment(horizontal='left'), Font(bold=False))
+    set_cell_properties(sheet, last_row + 2, 2, 3, set_border('thin'))
+    set_cell_properties(sheet, last_row + 2, 6, formula_f, None, Alignment(horizontal='left'), Font(size=14, bold=True))
+    set_cell_properties(sheet, last_row + 2, 9, formula_i, None, Alignment(horizontal='right'), Font(size=14, bold=True))
 
 def loop_json(json_data, workbook):
     '''
@@ -151,6 +129,7 @@ def format_excel_inner(json_data):
         if sheet not in initial_sheets:
             add_coordinators(workbook[sheet])
             set_print_area(workbook[sheet])
+            add_colontituls(workbook[sheet])
     hide_sheets(workbook, initial_sheets)
 
     return workbook

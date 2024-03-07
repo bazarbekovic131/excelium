@@ -116,7 +116,7 @@ def delete_file(directory, age_days = 14):
 
 @app.route('/split_workbook/<filename>', methods=['GET'])
 def split_workbook_route(filename):
-    sts.split_workbook(filename)
+    zipname = sts.split_workbook(filename)
 
     base_dir = os.path.dirname(os.path.abspath(__file__))
     directory = os.path.join(base_dir, 'zips')
@@ -124,5 +124,5 @@ def split_workbook_route(filename):
 
 
 if __name__ == '__main__':
-    app.run(debug=True, port=25351, host = '192.168.30.19')
+    app.run(debug=False, port=25351, host = '192.168.30.19')
     logging.basicConfig(level=logging.INFO)
