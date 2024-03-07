@@ -3,16 +3,16 @@ from flask_cors import CORS  # Import CORS
 import os
 from datetime import datetime, timedelta
 import logging
-from outer_registry import format_excel_outer
+from outer_registry import add_coordinators_outer, format_excel_outer
 from inner_registry import format_excel_inner
 import scripts as sts
 
 
 
-def save_excel_on_server(workbook, base_dir, regnum = ''):
+def save_excel_on_server(workbook, base_dir):
     # Format the current date
-    date_str = datetime.now().strftime('%d.%m.%Y')
-    filename = f"reestr_{regnum}_ot_{date_str}.xlsx"
+    date_str = datetime.now().strftime('%Y-%m-%d_%h_%m_%s')
+    filename = f"reestr_{date_str}.xlsx"
 
     # Ensure there's a directory to save the file in
     save_dir = os.path.join(base_dir, 'saves')
@@ -39,7 +39,6 @@ def form_excel():
     json_data = request.get_json(force=True)
 
     payment_documents = json_data.get('request', [])
-    regnum = payment_documents[0].get('registry_name', '').strip('РЕЕСТР ПЛАТЕЖЕЙ №')  # registry number
 
     sorted_payment_documents = sorted(payment_documents, key=lambda x: x.get('object_name', ''))
 
@@ -50,7 +49,7 @@ def form_excel():
     workbook = format_excel_inner(json_data)
 
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    filename = save_excel_on_server(workbook, base_dir, regnum)
+    filename = save_excel_on_server(workbook, base_dir)
 
      # Construct a download URL or simply return the filename
     download_url = f"http://192.168.30.19:25351/saves/{filename}"
@@ -75,16 +74,6 @@ def form_excel_outer():
 
 @app.route('/saves/<filename>', methods = ['GET'])
 def download_file(filename):
-    '''
-    Downloads a file from the 'saves' directory.
-
-    Args:
-        filename (str): The name of the file to be downloaded.
-
-    Returns:
-        Response: The file to be downloaded as an attachment.
-
-    '''
     base_dir = os.path.dirname(os.path.abspath(__file__))
     directory = os.path.join(base_dir, 'saves')
     return send_from_directory(directory, filename, as_attachment=True)
@@ -113,15 +102,8 @@ def delete_file(directory, age_days = 14):
                 os.remove(file_path)
                 print(f'Deleted {filename}.')
 
-@app.route('/split_workbook/<filename>', methods=['GET'])
-def split_workbook_route(filename):
-    zipname = sts.split_workbook(filename)
-
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    directory = os.path.join(base_dir, 'zips')
-    return send_from_directory(directory, filename, as_attachment=True)
 
 
 if __name__ == '__main__':
-    app.run(debug=False, port=25351, host = '192.168.30.19')
+    app.run(debug=True, port=25351, host = '192.168.30.19')
     logging.basicConfig(level=logging.INFO)
