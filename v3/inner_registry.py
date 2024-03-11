@@ -31,13 +31,13 @@ def add_coordinators(sheet):
 
     # Loop through the specified rows (8 times)
     for i in range(1,8):
-        formula_b = '=INDEX(СПР_ОБЪЕКТОВ!$B$7:$K$80, MATCH($G11, СПР_ОБЪЕКТОВ!$B$7:$B$80, 0), {3 + i})'
+        formula_b = f'=INDEX(СПР_ОБЪЕКТОВ!$B$7:$K$80, MATCH($G11, СПР_ОБЪЕКТОВ!$B$7:$B$80, 0), {3 + i})'
         row = final_row + i * 3
         set_cell_properties(sheet, row, 2, formula_b, set_border('thin'))
         set_cell_properties(sheet, row, 6, formula_f, None, Alignment(horizontal='left'), Font(size=14, bold=True))
         set_cell_properties(sheet, row, 9, formula_i, None, Alignment(horizontal='right'), Font(size=14, bold=True))
 
-    last_row = final_row + 17
+    last_row = final_row + 24
     set_cell_properties(sheet, last_row, 6, "СОГЛАСОВАНО", None, Alignment(horizontal='left'), Font(bold=False))
     set_cell_properties(sheet, last_row + 2, 2, 3, set_border('thin'))
     set_cell_properties(sheet, last_row + 2, 6, formula_f, None, Alignment(horizontal='left'), Font(size=14, bold=True))
@@ -129,7 +129,7 @@ def format_excel_inner(json_data):
         if sheet not in initial_sheets:
             add_coordinators(workbook[sheet])
             set_print_area(workbook[sheet])
-            add_colontituls(workbook[sheet])
+            #add_colontituls(workbook[sheet])
     hide_sheets(workbook, initial_sheets)
 
     return workbook

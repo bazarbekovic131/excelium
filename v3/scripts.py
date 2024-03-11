@@ -186,9 +186,8 @@ def create_concatenated_info(data_item):
     return concatenated_info
 
 def add_colontituls(sheet):
-    sheet.header_footer = openpyxl.worksheet.header_footer.HeaderFooter() # Create a new header/footer object
-    sheet.header_footer.left_footer = "Группа компаний «Шар Құрылыс»" # Левый нижний колонтитул
-    sheet.header_footer.right_footer = "Дата и время печати &D &T" # Правый нижний колонтитул
+    sheet.HeaderFooter.FirstFooter.left.text = "Группа компаний «Шар Құрылыс»" # Левый нижний колонтитул
+    sheet.HeaderFooter.FirstFooter.right.text = "Дата и время печати &D &T" # Правый нижний колонтитул
 
 def set_print_area(sheet):
     last_row = find_last_row_in_col(sheet,6)
