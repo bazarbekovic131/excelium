@@ -186,8 +186,8 @@ def create_concatenated_info(data_item):
     return concatenated_info
 
 def add_colontituls(sheet):
-    sheet.HeaderFooter.FirstFooter.left.text = "Группа компаний «Шар Құрылыс»" # Левый нижний колонтитул
-    sheet.HeaderFooter.FirstFooter.right.text = "Дата и время печати &D &T" # Правый нижний колонтитул
+    sheet.oddFooter.left.text = "Группа компаний «Шар Құрылыс»" # Left footer
+    sheet.oddFooter.right.text = "Дата и время печати &D &T" # Right footer
 
 def set_print_area(sheet):
     last_row = find_last_row_in_col(sheet,6)

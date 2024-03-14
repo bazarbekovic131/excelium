@@ -129,7 +129,7 @@ def format_excel_inner(json_data):
         if sheet not in initial_sheets:
             add_coordinators(workbook[sheet])
             set_print_area(workbook[sheet])
-            #add_colontituls(workbook[sheet])
+            add_colontituls(workbook[sheet])
     hide_sheets(workbook, initial_sheets)
 
     return workbook
