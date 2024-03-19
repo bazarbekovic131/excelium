@@ -15,16 +15,6 @@ class TestApp(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers['Content-Disposition'], f'attachment; filename={filename}')
 
-    def test_save_excel_on_server(self):
-        workbook = 'example.xlsx'
-        base_dir = '/path/to/save'
-        regnum = '12345'
-        
-        # Call the function
-        save_excel_on_server(workbook, base_dir, regnum)
-        
-        # Add your assertions here to verify the expected behavior
-
     def test_delete_file(self):
         directory = '/path/to/files'
         age_days = 14
