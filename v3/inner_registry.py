@@ -3,6 +3,7 @@ import logging
 from shutil import copy2
 from scripts import format_row, set_border, find_last_row_in_col, load_excel, hide_sheets, create_concatenated_info, set_print_area, add_colontituls, set_cell_properties
 import openpyxl
+import firmen_und_objekten as firmobj
 from openpyxl.styles import Alignment, Font, Border, Side
 
 
@@ -43,6 +44,53 @@ def add_coordinators(sheet):
     set_cell_properties(sheet, last_row + 2, 6, formula_f, None, Alignment(horizontal='left'), Font(size=14, bold=True))
     set_cell_properties(sheet, last_row + 2, 9, formula_i, None, Alignment(horizontal='right'), Font(size=14, bold=True))
 
+def add_coordinators_v4(sheet):
+    '''
+    Adds coordinators to the specified sheet.
+
+    Args:
+        sheet (openpyxl.worksheet.worksheet.Worksheet): The worksheet to add coordinators to.
+
+    Returns:
+        None
+    '''
+
+    col_index = 6 #F
+    formula_f = '=IF(ISNUMBER(VALUE(INDIRECT("B" & ROW()))), VLOOKUP(VALUE(INDIRECT("B" & ROW())), СПР_ПОДПИСАНТОВ!$B$14:$K$100, 9, 0) & " " & VLOOKUP(VALUE(INDIRECT("B" & ROW())), СПР_ПОДПИСАНТОВ!$B$14:$K$100, 7, 0), "")'
+    formula_i = '=IF(ISNUMBER(VALUE(INDIRECT("B" & ROW()))), VLOOKUP(VALUE(INDIRECT("B" & ROW())), СПР_ПОДПИСАНТОВ!$B$14:$K$100, 5, 0), "")'
+
+    final_row = find_last_row_in_col(sheet, col_index)
+
+    if final_row:
+        logging.info(f"The last non-empty cell in column {chr(64 + col_index)} of sheet '{sheet.title}' is in row {final_row}.")
+    else:
+        logging.info(f"No non-empty cells found in column {chr(64 + col_index)} of sheet '{sheet.title}'.")
+
+    company = sheet['H11'].value # Get the company name from the sheet
+    object_name = sheet['G11'].value # Get the object name from the sheet
+
+    directors, coordinators_list = firmobj.check_company_object_pair(company, object_name) # Get the coordinators for the company and object
+
+    n = len(coordinators_list) # Get the number of coordinators
+    print(f'Company: {company}, Object: {object_name} Number of coordinators: {n}; coordinators: {coordinators_list}')
+    for i in range(1,n+1):
+        formula_b = f'=INDEX(СПР_ОБЪЕКТОВ!$B$7:$K$80, MATCH($G11, СПР_ОБЪЕКТОВ!$B$7:$B$80, 0), {3 + i})'
+        row = final_row + i * 3
+        
+        if coordinators_list[i-1] != 3:
+            set_cell_properties(sheet, row, 2, coordinators_list[i-1], set_border('thin'))
+            set_cell_properties(sheet, row, 6, formula_f, None, Alignment(horizontal='left'), Font(size=14, bold=True))
+            set_cell_properties(sheet, row, 9, formula_i, None, Alignment(horizontal='right'), Font(size=14, bold=True))
+        else:
+            set_cell_properties(sheet, row, 6, "СОГЛАСОВАНО", None, Alignment(horizontal='left'), Font(bold=False))
+            set_cell_properties(sheet, row + 2, 2, 3, set_border('thin'))
+            set_cell_properties(sheet, row + 2, 6, formula_f, None, Alignment(horizontal='left'), Font(size=14, bold=True))
+            set_cell_properties(sheet, row + 2, 9, formula_i, None, Alignment(horizontal='right'), Font(size=14, bold=True))
+    
+    # Add directors (final piece)
+    sheet['B2'] = directors[0]
+    sheet['B4'] = directors[1]
+
 def loop_json(json_data, workbook):
     '''
     This function works with the loaded json and with the copied workbook
@@ -75,6 +123,8 @@ def loop_json(json_data, workbook):
                 format_row(workbook[object_name], row, cols)
 
                 # On dr JSON datei bekommn
+
+                workbook[object_name][f'H11'] = data[i]["organization"]
 
                 sides_str = f'Заявитель: {data[i]["organization"]}'+'\n\n'+f'Кому: {data[i]["counteragent"]}'
 
@@ -127,7 +177,7 @@ def format_excel_inner(json_data):
 
     for sheet in workbook.sheetnames:
         if sheet not in initial_sheets:
-            add_coordinators(workbook[sheet])
+            add_coordinators_v4(workbook[sheet])
             set_print_area(workbook[sheet])
             add_colontituls(workbook[sheet])
     hide_sheets(workbook, initial_sheets)

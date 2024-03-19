@@ -118,97 +118,96 @@ approver_ids_7 = {
     "Бекмуратов Е.И.": 3
 }
 
-print(list(approver_ids_2.values())+[0,1])
-
 def check_company_object_pair(company, object):
     # Perform some checks on the company and object pair
     # and return a list of integers
     
     company_object_pairs = {
         # Company-Object List 1 (blue colour in the respective table) refer to the id in column for company, not column 3 FID
-        ("ТОО \"СМУ Аргон\"", "Администрация"): [16, 0] + list(approver_ids_1.values()),
-        ("ТОО «M2 Development»", "Администрация"): [0, 10] + list(approver_ids_1.values()),
-        ("ТОО «Bestbuilding»", "Администрация"): [0, 26] + list(approver_ids_1.values()),
-        ("ТОО «BuildingPlus»", "Администрация"): [0 , 31] + list(approver_ids_1.values()),
-        ("ТОО «BestLife Solutions»", "Администрация"): [0, 29] + list(approver_ids_1.values()),
-        ("ТОО «New Line Project»", "Администрация"): [0, 44] + list(approver_ids_1.values()),
-        ("ТОО «Астана Механизация»", "Администрация"): [0, 25] + list(approver_ids_1.values()),
-        ("ТОО «Бағыстан»", "Администрация"): [0, 28] + list(approver_ids_1.values()),
-        ("ТОО «BestStroy»", "Администрация"): [0, 30] + list(approver_ids_1.values()),
+        ("ТОО \"СМУ Аргон\"", "Администрация"): ([16, 0], list(approver_ids_1.values())),
+        ("ТОО «M2 Development»", "Администрация"): ([0, 10], list(approver_ids_1.values())),
+        ("ТОО «Bestbuilding»", "Администрация"): ([0, 26], list(approver_ids_1.values())),
+        ("ТОО «BuildingPlus»", "Администрация"): ([0 , 31], list(approver_ids_1.values())),
+        ("ТОО «BestLife Solutions»", "Администрация"): ([0, 29], list(approver_ids_1.values())),
+        ("ТОО «New Line Project»", "Администрация"): ([0, 44], list(approver_ids_1.values())),
+        ("ТОО «Астана Механизация»", "Администрация"): ([0, 25], list(approver_ids_1.values())),
+        ("ТОО «Бағыстан»", "Администрация"): ([0, 28], list(approver_ids_1.values())),
+        ("ТОО «BestStroy»", "Администрация"): ([0, 30], list(approver_ids_1.values())),
 
         # Company-Object List 2 (gray colour in the respective table)
-        ("ТОО «Шар-Кұрылыс»", "Администрация"): [0, 1] + list(approver_ids_2.values()), # finished 
-        ("ТОО «Аргон-Строй»", "Администрация"): [0, 17] + list(approver_ids_2.values()), # finished
-        ("ТОО «EVOLVEKZ»", "Администрация"): [0, 27] + list(approver_ids_2.values()), 
+        ("ТОО «Шар-Кұрылыс»", "Администрация"): ([0, 1], list(approver_ids_2.values())), # finished 
+        ("ТОО «Аргон-Строй»", "Администрация"): ([0, 17], list(approver_ids_2.values())), # finished
+        ("ТОО «EVOLVEKZ»", "Администрация"): ([0, 27], list(approver_ids_2.values())), 
 
         # Company-Object List 3 (orange colour in the respective table)
-        ("ТОО \"СМУ Аргон\"", "ЖК \"Grand Victoria 2\""): [16, 0] + list(approver_ids_3.values()),
-        ("ТОО «BuildingPlus»", "ЖК \"Grand Victoria 2\""): [0, 31] + list(approver_ids_3.values()),
-        ("ТОО \"СМУ Аргон\"", "ЖК \"Багыстан-12\""): [16, 0] + list(approver_ids_3.values()),
-        ("ТОО «BestLife Solutions»", "ЖК \"Багыстан-12\""): [0, 29] + list(approver_ids_3.values()),
-        ("ТОО \"СМУ Аргон\"", "ЖК \"New Line\" (2,4)"): [16, 0] + list(approver_ids_3.values()),
+        ("ТОО \"СМУ Аргон\"", "ЖК \"Grand Victoria 2\""): ([16, 0], list(approver_ids_3.values())),
+        ("ТОО «BuildingPlus»", "ЖК \"Grand Victoria 2\""): ([0, 31], list(approver_ids_3.values())),
+        ("ТОО \"СМУ Аргон\"", "ЖК \"Багыстан-12\""): ([16, 0], list(approver_ids_3.values())),
+        ("ТОО «BestLife Solutions»", "ЖК \"Багыстан-12\""): ([0, 29], list(approver_ids_3.values())),
+        ("ТОО \"СМУ Аргон\"", "ЖК \"New Line\" (2,4)"): ([16, 0], list(approver_ids_3.values())),
 
-        ("ТОО \"СМУ Аргон\"", "ЖК \"Багыстан-ФГЖС\" (4 дома - 1.3.7.11)"): [16, 0] + list(approver_ids_3.values()),
-        ("ТОО \"СМУ Аргон\"", "ЖК \"Багыстан-1\""): [16, 0] + list(approver_ids_3.values()),
-        ("ТОО \"СМУ Аргон\"", "ЖК \"Багыстан-3\""): [16, 0] + list(approver_ids_3.values()),
-        ("ТОО \"СМУ Аргон\"", "ЖК \"Багыстан-7\""): [16, 0] + list(approver_ids_3.values()),
-        ("ТОО \"СМУ Аргон\"", "ЖК \"Багыстан-11\""): [16, 0] + list(approver_ids_3.values()),
-        ("ТОО \"СМУ Аргон\"", "ЖК \"Багыстан-8\""): [16, 0] + list(approver_ids_3.values()),
-        ("ТОО \"СМУ Аргон\"", "ЖК \"Багыстан-9\""): [16, 0] + list(approver_ids_3.values()),
-        ("ТОО \"СМУ Аргон\"", "ЖК \"Багыстан-10\""): [16, 0] + list(approver_ids_3.values()),
-        ("ТОО \"СМУ Аргон\"", "ЖК \"Багыстан-13\""): [16, 0] + list(approver_ids_3.values()),
-        ("ТОО \"СМУ Аргон\"", "ЖК \"Багыстан-14\""): [16, 0] + list(approver_ids_3.values()),
-        ("ТОО \"СМУ Аргон\"", "ЖК \"Багыстан-УС\" (5 домов - 8.9.10.13.14)"): [16, 0] + list(approver_ids_3.values()),
-        ("ТОО «BestLife Solutions»", "ЖК \"Багыстан-12\""): [0, 29] + list(approver_ids_3.values()),
-        ("ТОО New Line Project", "ЖК \"New Line\" (2,4)"): [44, 0] + list(approver_ids_3.values()),
+        ("ТОО \"СМУ Аргон\"", "ЖК \"Багыстан-ФГЖС\""): ([16, 0], list(approver_ids_3.values())),
+        ("ТОО \"СМУ Аргон\"", "ЖК \"Багыстан-1\""): ([16, 0], list(approver_ids_3.values())),
+        ("ТОО \"СМУ Аргон\"", "ЖК \"Багыстан-3\""): ([16, 0], list(approver_ids_3.values())),
+        ("ТОО \"СМУ Аргон\"", "ЖК \"Багыстан-7\""): ([16, 0], list(approver_ids_3.values())),
+        ("ТОО \"СМУ Аргон\"", "ЖК \"Багыстан-11\""): ([16, 0], list(approver_ids_3.values())),
+        ("ТОО \"СМУ Аргон\"", "ЖК \"Багыстан-8\""): ([16, 0], list(approver_ids_3.values())),
+        ("ТОО \"СМУ Аргон\"", "ЖК \"Багыстан-9\""): ([16, 0], list(approver_ids_3.values())),
+        ("ТОО \"СМУ Аргон\"", "ЖК \"Багыстан-10\""): ([16, 0], list(approver_ids_3.values())),
+        ("ТОО \"СМУ Аргон\"", "ЖК \"Багыстан-13\""): ([16, 0], list(approver_ids_3.values())),
+        ("ТОО \"СМУ Аргон\"", "ЖК \"Багыстан-14\""): ([16, 0], list(approver_ids_3.values())),
+        ("ТОО \"СМУ Аргон\"", "ЖК \"Багыстан-УС\""): ([16, 0], list(approver_ids_3.values())),
+        ("ТОО «BestLife Solutions»", "ЖК \"Багыстан-12\""): ([0, 29], list(approver_ids_3.values())),
+        ("ТОО «New Line Project»", "ЖК \"New Line\" (2,4)"): ([44, 0], list(approver_ids_3.values())),
 
-        ("ТОО «Бағыстан»", "ЖК \"Багыстан-ФГЖС\" (4 дома - 1.3.7.11)"): [16, 0] + list(approver_ids_3.values()),
-        ("ТОО «Бағыстан»", "ЖК \"Багыстан-1\""): [16, 0] + list(approver_ids_3.values()),
-        ("ТОО «Бағыстан»", "ЖК \"Багыстан-3\""): [16, 0] + list(approver_ids_3.values()),
-        ("ТОО «Бағыстан»", "ЖК \"Багыстан-7\""): [16, 0] + list(approver_ids_3.values()),
-        ("ТОО «Бағыстан»", "ЖК \"Багыстан-11\""): [16, 0] + list(approver_ids_3.values()),
-        
+        ("ТОО «Бағыстан»", "ЖК \"Багыстан-ФГЖС\""): ([16, 0], list(approver_ids_3.values())),
+        ("ТОО «Бағыстан»", "ЖК \"Багыстан-1\""): ([16, 0], list(approver_ids_3.values())),
+        ("ТОО «Бағыстан»", "ЖК \"Багыстан-3\""): ([16, 0], list(approver_ids_3.values())),
+        ("ТОО «Бағыстан»", "ЖК \"Багыстан-7\""): ([16, 0], list(approver_ids_3.values())),
+        ("ТОО «Бағыстан»", "ЖК \"Багыстан-11\""): ([16, 0], list(approver_ids_3.values())),
+
         # Company-Object List 4 (light yellow colour in the respective table)
 
-        ("ТОО «Шар-Кұрылыс»", "ЖК \"Grand Victoria 2\""): [0, 1] + list(approver_ids_4.values()),
-        ("ТОО «Шар-Кұрылыс»", "ЖК \"New Line\" (2,4)"): [0, 1] + list(approver_ids_4.values()),
-        ("ТОО «Шар-Кұрылыс»", "ЖК \"Багыстан-УС\" (5 домов - 8.9.10.13.14)"): [0, 1] + list(approver_ids_4.values()),
-        ("ТОО «Шар-Кұрылыс»", "ЖК \"Багыстан-8\""): [0, 1] + list(approver_ids_4.values()),
-        ("ТОО «Шар-Кұрылыс»", "ЖК \"Багыстан-9\""): [0, 1] + list(approver_ids_4.values()),
-        ("ТОО «Шар-Кұрылыс»", "ЖК \"Багыстан-10\""): [0, 1] + list(approver_ids_4.values()),
-        ("ТОО «Шар-Кұрылыс»", "ЖК \"Багыстан-13\""): [0, 1] + list(approver_ids_4.values()),
-        ("ТОО «Шар-Кұрылыс»", "ЖК \"Багыстан-14\""): [0, 1] + list(approver_ids_4.values()),
+        ("ТОО «Шар-Кұрылыс»", "ЖК \"Grand Victoria 2\""): ([0, 1], list(approver_ids_4.values())),
+        ("ТОО «Шар-Кұрылыс»", "ЖК \"New Line\" (2,4)"): ([0, 1], list(approver_ids_4.values())),
+        ("ТОО «Шар-Кұрылыс»", "ЖК \"Багыстан-УС\""): ([0, 1], list(approver_ids_4.values())),
+        ("ТОО «Шар-Кұрылыс»", "ЖК \"Багыстан-8\""): ([0, 1], list(approver_ids_4.values())),
+        ("ТОО «Шар-Кұрылыс»", "ЖК \"Багыстан-9\""): ([0, 1], list(approver_ids_4.values())),
+        ("ТОО «Шар-Кұрылыс»", "ЖК \"Багыстан-10\""): ([0, 1], list(approver_ids_4.values())),
+        ("ТОО «Шар-Кұрылыс»", "ЖК \"Багыстан-13\""): ([0, 1], list(approver_ids_4.values())),
+        ("ТОО «Шар-Кұрылыс»", "ЖК \"Багыстан-14\""): ([0, 1], list(approver_ids_4.values())),
 
-        ("ТОО «Аргон-Строй»", "ЖК \"Багыстан-12\""): [0, 17] + list(approver_ids_4.values()),
-        ("ТОО «Аргон-Строй»", "ЖК \"Багыстан-ФГЖС\" (4 дома - 1.3.7.11)"): [0, 17] + list(approver_ids_4.values()),
-        ("ТОО «Аргон-Строй»", "ЖК \"Багыстан-1\""): [0, 17] + list(approver_ids_4.values()),
-        ("ТОО «Аргон-Строй»", "ЖК \"Багыстан-3\""): [0, 17] + list(approver_ids_4.values()),
-        ("ТОО «Аргон-Строй»", "ЖК \"Багыстан-7\""): [0, 17] + list(approver_ids_4.values()),
-        ("ТОО «Аргон-Строй»", "ЖК \"Багыстан-11\""): [0, 17] + list(approver_ids_4.values()),
+        ("ТОО «Аргон-Строй»", "ЖК \"Багыстан-12\""): ([0, 17], list(approver_ids_4.values())),
+        ("ТОО «Аргон-Строй»", "ЖК \"Багыстан-ФГЖС\""): ([0, 17], list(approver_ids_4.values())),
+        ("ТОО «Аргон-Строй»", "ЖК \"Багыстан-1\""): ([0, 17], list(approver_ids_4.values())),
+        ("ТОО «Аргон-Строй»", "ЖК \"Багыстан-3\""): ([0, 17], list(approver_ids_4.values())),
+        ("ТОО «Аргон-Строй»", "ЖК \"Багыстан-7\""): ([0, 17], list(approver_ids_4.values())),
+        ("ТОО «Аргон-Строй»", "ЖК \"Багыстан-11\""): ([0, 17], list(approver_ids_4.values())),
 
         # Company-Object List 5 (green colour in the respective table)
-        ("ТОО «Шар-Кұрылыс»", "ЖК \"АлтынШар-2\""): [0, 1] + list(approver_ids_5.values()),
-        ("ТОО «Шар-Кұрылыс»", "ЖК \"АлтынШар-1\""): [0, 1] + list(approver_ids_5.values()),
-        ("ТОО «Аргон-Строй»", "ЖК \"АлтынШар-1\""): [0, 17] + list(approver_ids_5.values()),
-        ("ТОО «Аргон-Строй»", "ЖК \"АлтынШар-2\""): [0, 17] + list(approver_ids_5.values()),
-        ("ТОО \"СМУ Аргон\"", "ЖК \"АлтынШар-1\""): [16, 0] + list(approver_ids_5.values()),
-        ("ТОО \"СМУ Аргон\"", "ЖК \"АлтынШар-2\""): [16, 0] + list(approver_ids_5.values()),
+        ("ТОО «Шар-Кұрылыс»", "ЖК \"АлтынШар-2\""): ([0, 1], list(approver_ids_5.values())),
+        ("ТОО «Шар-Кұрылыс»", "ЖК \"АлтынШар-1\""): ([0, 1], list(approver_ids_5.values())),
+        ("ТОО «Аргон-Строй»", "ЖК \"АлтынШар-1\""): ([0, 17], list(approver_ids_5.values())),
+        ("ТОО «Аргон-Строй»", "ЖК \"АлтынШар-2\""): ([0, 17], list(approver_ids_5.values())),
+        ("ТОО \"СМУ Аргон\"", "ЖК \"АлтынШар-1\""): ([16, 0], list(approver_ids_5.values())),
+        ("ТОО \"СМУ Аргон\"", "ЖК \"АлтынШар-2\""): ([16, 0], list(approver_ids_5.values())),
 
         # Company-Object List 6
-        ("ТОО «Алтын Шар West»", "ЖК \"АлтынШар-1\""): [0, 18] + list(approver_ids_6.values()),
-        ("ТОО «Алтын Шар West»", "ЖК \"АлтынШар-2\""): [0, 18] + list(approver_ids_6.values()),
-        ("ТОО \"СМУ Аргон\"", "ЖК \"Grand Victoria 1\""): [16, 0] + list(approver_ids_6.values()),
-        ("ТОО «Bestbuilding»", "ЖК \"Grand Victoria 1\""): [0, 26] + list(approver_ids_6.values()),
+        ("ТОО «Алтын Шар West»", "ЖК \"АлтынШар-1\""): ([0, 18], list(approver_ids_6.values())),
+        ("ТОО «Алтын Шар West»", "ЖК \"АлтынШар-2\""): ([0, 18], list(approver_ids_6.values())),
+        ("ТОО \"СМУ Аргон\"", "ЖК \"Grand Victoria 1\""): ([16, 0], list(approver_ids_6.values())),
+        ("ТОО «Bestbuilding»", "ЖК \"Grand Victoria 1\""): ([0, 26], list(approver_ids_6.values())),
 
         # Company-Object List 7
-        ("ТОО «Аргон-Строй»", "ЖК \"Grand Victoria 1\""): [26, 17] + list(approver_ids_7.values()),
+        ("ТОО «Аргон-Строй»", "ЖК \"Grand Victoria 1\""): ([26, 17], list(approver_ids_7.values())),
     }
     
-    try:
-        return company_object_pairs.get((company, object), [])
-    except KeyError:
-        return [0] * 8
+    (directors, cp) = company_object_pairs.get((company, object), ([], []))
+    if cp == []:
+        return directors, [0]*8
+    else:
+        return directors, cp
 
-test =  check_company_object_pair("ТОО «Шар-Кұрылыс»", "ЖК \"Grand Victoria 2\"")
-
-print(test)
+test_dir, test_com =  check_company_object_pair("ТОО «Шар-Кұрылыс»", "ЖК \"Grand Victoria 2\"")
+print('test')
+print(test_dir, test_com)

@@ -35,7 +35,7 @@ def format_row(sheet, row_number, columns):
         cell.font = font
         cell.border = border
         cell.alignment = alignment
-        # cell.fill = yellow_fill # This style was discarded
+        sheet[f'{col}{row_number}'].alignment = Alignment(horizontal='center')
 
 def set_cell_properties(sheet, row, column, value, border=None, alignment=None, font=None):
     '''
@@ -92,7 +92,7 @@ def read_json():
     Component of the testing module
     '''
 
-    with open('v2/tests/model.json', 'r') as file:
+    with open('tests/model.json', 'r') as file:
         json_data = json.load(file)
 
         payment_documents = json_data.get('request', [])
