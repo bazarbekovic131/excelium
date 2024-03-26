@@ -3,7 +3,7 @@ import logging
 from shutil import copy2
 from scripts import format_row, set_border, find_last_row_in_col, load_excel, hide_sheets, create_concatenated_info, set_print_area, add_colontituls, set_cell_properties
 import openpyxl
-import firmen_und_objekten as firmobj
+import firmen_und_objekte as firmobj
 from openpyxl.styles import Alignment, Font, Border, Side
 
 
