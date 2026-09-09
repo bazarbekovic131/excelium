@@ -88,6 +88,30 @@ document.addEventListener('keydown', function (e) {
   }
 });
 
+// Поиск внутри длинного списка выбора: сотрудников больше сотни, и
+// листать их мышью невозможно. Прячем неподходящие пункты, а не
+// перерисовываем список — так выбранное значение не теряется.
+document.addEventListener('input', function (e) {
+  const box = e.target.closest('[data-filter-for]');
+  if (!box) return;
+  const select = document.getElementById(box.dataset.filterFor);
+  if (!select) return;
+  const words = box.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  let shown = 0;
+  select.querySelectorAll('option').forEach(function (o) {
+    if (!o.value) { o.hidden = false; return; }   // «— не печатать —» всегда на месте
+    const text = o.textContent.toLowerCase();
+    const hit = words.every(function (w) { return text.indexOf(w) >= 0; });
+    o.hidden = !hit;
+    if (hit) shown++;
+  });
+  select.querySelectorAll('optgroup').forEach(function (g) {
+    g.hidden = ![].some.call(g.querySelectorAll('option'), function (o) { return !o.hidden; });
+  });
+  const counter = box.parentNode.querySelector('[data-filter-count]');
+  if (counter) counter.textContent = words.length ? shown + ' подходит' : '';
+});
+
 // Автообновление живых страниц — состояние переключателя запоминается.
 (function () {
   const box = document.getElementById('autorefresh');

@@ -358,6 +358,24 @@ class SignerStore:
             return conn.execute("SELECT id FROM signer_people WHERE fio_key = ?",
                                 (fio_key(fio),)).fetchone()["id"]
 
+    def person_usage(self, person_id: int) -> list[str]:
+        """Где человек подписывает: удалять его вслепую нельзя, иначе
+        реестр молча выйдет без подписи."""
+        with connect(self.db_path) as conn:
+            used = [f"{r['company']} · {r['object_name'] or 'вся компания'}"
+                    for r in conn.execute(
+                        "SELECT company, object_name FROM signer_bindings"
+                        " WHERE soglasovano_id = ? OR utverzhdayu_id = ?",
+                        (person_id, person_id)).fetchall()]
+            used += [f"набор {r['name']}" for r in conn.execute(
+                "SELECT DISTINCT name FROM signer_sets WHERE person_id = ?",
+                (person_id,)).fetchall()]
+        return used
+
+    def delete_person(self, person_id: int) -> None:
+        with connect(self.db_path) as conn:
+            conn.execute("DELETE FROM signer_people WHERE id = ?", (person_id,))
+
     def save_binding(self, *, company: str, object_name: str, set_name: str,
                      soglasovano: dict | None, utverzhdayu: dict | None,
                      binding_id: int | None = None) -> int:

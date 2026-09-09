@@ -27,9 +27,45 @@
   <span class="chip neutral" style="margin-left:auto">показано: {{ bindings|length }}</span>
 </form>
 
+<div class="company-grid">
+  {% for card in cards %}
+  <div class="card {{ 'picked' if card.company == company }}">
+    <div class="card-head">
+      <span class="card-title" style="text-transform:none;letter-spacing:0">{{ card.company }}</span>
+      <span style="display:flex;gap:8px;align-items:center">
+        <span class="chip neutral">{{ card.count }}</span>
+        {% if card.company == company %}
+        <a class="btn ghost sm" href="/ui/signers">Свернуть</a>
+        {% else %}
+        <a class="btn ghost sm" href="/ui/signers?company={{ card.company|urlencode }}">Открыть</a>
+        {% endif %}
+      </span>
+    </div>
+    <div class="card-body">
+      {% if card.whole %}
+      <div class="pair"><span class="pair-key">Согласовано</span>
+        <span>{% if card.whole.left %}{{ card.whole.left.fio }}<span class="hint"> · {{ card.whole.left.position }}</span>{% else %}—{% endif %}</span></div>
+      <div class="pair"><span class="pair-key">Утверждаю</span>
+        <span>{% if card.whole.right %}{{ card.whole.right.fio }}<span class="hint"> · {{ card.whole.right.position }}</span>{% else %}—{% endif %}</span></div>
+      <div class="pair"><span class="pair-key">Набор</span>
+        <span><a href="/ui/signers/set/{{ card.whole.set_name }}">{{ card.whole.set_name }}</a>
+          <a class="hint" href="/ui/signers/binding/{{ card.whole.id }}">правка правила компании</a></span></div>
+      {% else %}
+      <div class="hint">Правила на всю компанию нет — только объекты ниже.</div>
+      {% endif %}
+      {% if card.objects %}
+      <div class="hint" style="margin-top:8px">Объекты со своим правилом: {{ card.objects|length }}</div>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  <div class="card"><div class="card-body"><div class="empty">Привязок нет</div></div></div>
+  {% endfor %}
+</div>
+
 <div class="card">
   <div class="card-head">
-    <span class="card-title">Привязки</span>
+    <span class="card-title">{{ ('Привязки: ' ~ company) if company else 'Все привязки' }}</span>
     <span class="card-note">пустой объект — правило на всю компанию; строка с объектом сильнее</span>
   </div>
   {% if bindings %}
@@ -52,7 +88,7 @@
     </tbody>
   </table>
   {% else %}
-  <div class="card-body"><div class="empty">Привязок нет</div></div>
+  <div class="card-body"><div class="empty">Ничего не нашлось</div></div>
   {% endif %}
 </div>
 
@@ -120,14 +156,21 @@
         {% for p in people %}
         <tr>
           <td colspan="4" style="padding:0">
+            <div style="display:flex;gap:6px;align-items:center;padding:6px 0">
             <form method="post" action="/ui/signers/person" class="inline"
-                  style="display:flex;gap:6px;align-items:center;padding:6px 0">
+                  style="display:flex;gap:6px;align-items:center">
               <input type="hidden" name="person_id" value="{{ p.id }}">
               <input type="text" name="fio" value="{{ p.fio }}" style="max-width:230px">
               <input type="text" name="position" value="{{ p.position }}" style="max-width:250px">
               <span class="chip {{ 'success' if p.docv_uid else 'neutral' }}" title="{{ p.docv_uid or 'нет связи со Структурой' }}">{{ '✓' if p.docv_uid else '—' }}</span>
-              <button class="btn ghost sm" data-busy="…">✓</button>
+              <button class="btn ghost sm" data-busy="…" title="Сохранить">✓</button>
             </form>
+            <form method="post" action="/ui/signers/person/delete/{{ p.id }}" class="inline"
+                  style="display:inline"
+                  onsubmit="return confirm('Удалить {{ p.fio }} из справочника?')">
+              <button class="btn ghost sm" title="Удалить">✕</button>
+            </form>
+            </div>
           </td>
         </tr>
         {% endfor %}

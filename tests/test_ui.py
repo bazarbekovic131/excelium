@@ -412,3 +412,53 @@ def test_signers_new_binding_form_opens(client):
     assert r.status_code == 200, r.text
     assert "Новая привязка" in r.text
     assert "Сотрудник из Структуры" in r.text and "Должность в Структуре" in r.text
+
+
+def test_every_employee_is_selectable_even_with_shared_position(client):
+    """Сотрудников больше сотни, должности повторяются: в списке должен
+    быть каждый человек отдельной строкой, плюс поиск по списку."""
+    _login(client)
+    items = [{"uid": f"uid-{i:03d}", "display_name": f"Сотрудник {i:03d}",
+              "position": "Прораб" if i % 2 else "Инженер ПТО",
+              "department": "Участок" if i % 3 else "Администрация"}
+             for i in range(120)]
+    client.post("/directory/structura", headers=docv_headers(), json={"items": items})
+    html = client.get("/ui/signers/binding/new").text
+    assert html.count('<option value="r:uid-') == 240   # 120 человек на два блока
+    assert "Сотрудник из Структуры (120)" in html
+    assert 'data-filter-for="slot-utverzhdayu"' in html
+    # двое с одной должностью — две отдельные строки, а не одна
+    assert "Сотрудник 001" in html and "Сотрудник 003" in html
+    # должности при этом сгруппированы: их единицы, а не сто двадцать
+    assert len(client.app.state.signers.positions()) < 10
+
+
+def test_person_delete_guarded_by_usage(client):
+    _login(client)
+    store = client.app.state.signers
+    used = next(p for p in store.people() if store.person_usage(p["id"]))
+    r = client.post(f"/ui/signers/person/delete/{used['id']}", follow_redirects=True)
+    assert "Сначала уберите его из подписей" in r.text
+    assert any(p["id"] == used["id"] for p in store.people())
+
+    free_id = store.save_person(None, "Никому Не Нужный", "Стажёр")
+    client.post(f"/ui/signers/person/delete/{free_id}", follow_redirects=False)
+    assert not any(p["id"] == free_id for p in store.people())
+
+
+def test_set_row_can_be_dropped(client):
+    _login(client)
+    store = client.app.state.signers
+    name = sorted(store.sets())[0]
+    before = store.sets()[name]
+    assert len(before) > 1
+    data = {"slot": [f"p:{e['person_id']}" for e in before],
+            "position": [e["position"] for e in before],
+            "print_company": [e["print_company"] for e in before],
+            "mark": [e["mark"] for e in before],
+            "skip_expense_types": [e["skip_expense_types"] for e in before],
+            "drop": "0"}
+    client.post(f"/ui/signers/set/{name}/save", data=data, follow_redirects=False)
+    after = store.sets()[name]
+    assert len(after) == len(before) - 1
+    assert after[0]["person_id"] == before[1]["person_id"]

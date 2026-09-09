@@ -896,11 +896,34 @@ def _binding_rows(store, search: str = "") -> list[dict]:
     return rows
 
 
+def _company_cards(rows: list[dict]) -> list[dict]:
+    """Привязки по компаниям: две сотни строк подряд читать невозможно,
+    а компаний два десятка. Правило на всю компанию выносится в шапку
+    карточки, объекты со своим правилом — списком под ней."""
+    cards: dict[str, dict] = {}
+    for row in rows:
+        card = cards.setdefault(row["company"], {
+            "company": row["company"], "whole": None, "objects": [], "count": 0})
+        card["count"] += 1
+        if row["object_name"]:
+            card["objects"].append(row)
+        else:
+            card["whole"] = row
+    for card in cards.values():
+        card["objects"].sort(key=lambda r: r["object_name"])
+    return sorted(cards.values(), key=lambda c: c["company"])
+
+
 @router.get("/ui/signers")
-def signers_page(request: Request, search: str = "", flash: str = "", flash_err: str = ""):
+def signers_page(request: Request, search: str = "", company: str = "",
+                 flash: str = "", flash_err: str = ""):
     store = request.app.state.signers
-    return _page(request, "signers.html", "signers", search=search,
-                 bindings=_binding_rows(store, search), sets=store.sets(),
+    rows = _binding_rows(store, search)
+    cards = _company_cards(rows)
+    if company:
+        rows = [r for r in rows if r["company"] == company]
+    return _page(request, "signers.html", "signers", search=search, company=company,
+                 bindings=rows, cards=cards, sets=store.sets(),
                  people=store.people(), stats=store.stats(),
                  gateway_positions=store.gateway_positions(),
                  flash=flash, flash_err=bool(flash_err))
@@ -952,6 +975,20 @@ def signers_person(request: Request, fio: str = Form(...), position: str = Form(
 
 # Пустая привязка обязана иметь ровно те же ключи, что и строка из базы:
 # форма читает их по имени, и недостающий ключ роняет страницу.
+@router.post("/ui/signers/person/delete/{person_id}")
+def signers_person_delete(request: Request, person_id: int):
+    store = request.app.state.signers
+    used = store.person_usage(person_id)
+    if used:
+        where = ", ".join(used[:5]) + ("…" if len(used) > 5 else "")
+        return RedirectResponse(
+            f"/ui/signers?flash=Сначала уберите его из подписей: {where}&flash_err=1",
+            status_code=302)
+    store.delete_person(person_id)
+    audit_log("signers_person_deleted", person_id=person_id)
+    return RedirectResponse("/ui/signers?flash=Человек удалён", status_code=302)
+
+
 EMPTY_BINDING = {"id": None, "company": "", "object_name": "", "set_name": "",
                  **{f"{role}{suffix}": None if suffix == "_id" else ""
                     for role in ("soglasovano", "utverzhdayu")
@@ -1049,6 +1086,10 @@ async def signers_set_save(request: Request, name: str):
     if form.get("add"):
         return RedirectResponse(f"/ui/signers/set/{name}?add=2", status_code=302)
     slots = form.getlist("slot")
+    drop = str(form.get("drop") or "")
+    if drop.isdigit() and int(drop) < len(slots):
+        slots = list(slots)
+        slots[int(drop)] = ""   # пустой подписант = строка не сохраняется
     positions = form.getlist("position")
     companies = form.getlist("print_company")
     marks = form.getlist("mark")

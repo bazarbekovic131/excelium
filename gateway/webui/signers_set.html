@@ -28,40 +28,48 @@
           <th style="width:34px">№</th><th style="width:270px">Кто подписывает</th><th>Должность шлюза — печатается</th>
           <th>Компания в подписи</th><th style="width:130px">Заголовок над подписью</th>
           <th style="width:200px">Пропустить при затратах</th>
+          <th style="width:40px"></th>
         </tr></thead>
         <tbody>
         {% for row in rows %}
         <tr>
           <td class="muted">{{ loop.index }}</td>
           <td>
-            <select name="slot">
+            <div class="combo">
+            <input type="text" data-filter-for="slot-{{ loop.index }}"
+                   placeholder="поиск по списку">
+            <select name="slot" id="slot-{{ loop.index }}">
               <option value="">— убрать строку —</option>
-              <optgroup label="Сотрудник из Структуры">
+              <optgroup label="Сотрудник из Структуры ({{ staff|length }})">
                 {% for person in staff %}
                 <option value="{{ person.value }}" {{ 'selected' if person.value == row.slot }}>
                   {{ person.fio }}{% if person.position %} · {{ person.position }}{% endif %}
                 </option>
                 {% endfor %}
               </optgroup>
-              <optgroup label="Должность в Структуре">
+              <optgroup label="Должность в Структуре ({{ positions|length }})">
                 {% for pos in positions %}
                 <option value="{{ pos.value }}" {{ 'selected' if pos.value == row.slot }}>
                   {{ pos.position }}{% if pos.department %} · {{ pos.department }}{% endif %}{% if pos.holders %} → {{ pos.holders|join(', ') }}{% endif %}
                 </option>
                 {% endfor %}
               </optgroup>
-              <optgroup label="Конкретный человек">
+              <optgroup label="Человек из справочника шлюза ({{ people|length }})">
                 {% for p in people %}
                 <option value="p:{{ p.id }}" {{ 'selected' if 'p:' ~ p.id == row.slot }}>{{ p.fio }}</option>
                 {% endfor %}
               </optgroup>
             </select>
+            </div>
           </td>
           <td><input type="text" name="position" value="{{ row.position }}"
                      list="gwpositions" placeholder="{{ row.default_position }}"></td>
           <td><input type="text" name="print_company" value="{{ row.print_company }}"></td>
           <td><input type="text" name="mark" value="{{ row.mark }}"></td>
           <td><input type="text" name="skip_expense_types" value="{{ row.skip_expense_types }}"></td>
+          <td>{% if row.slot %}<button class="btn ghost sm" name="drop" value="{{ loop.index0 }}"
+                      title="Убрать строку"
+                      onclick="return confirm('Убрать подпись из набора?')">✕</button>{% endif %}</td>
         </tr>
         {% endfor %}
         </tbody>
