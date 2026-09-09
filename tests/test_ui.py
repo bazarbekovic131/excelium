@@ -403,3 +403,12 @@ def test_signers_link_reports_what_it_found(client):
     assert "Структура: 2 сотрудников" in r.text
     assert "Узнали 1" in r.text and "переименовано 1" in r.text
     assert "Не нашли в Doc-V" in r.text
+
+
+def test_signers_new_binding_form_opens(client):
+    """Форма новой привязки: пустая заготовка обязана знать все поля."""
+    _login(client)
+    r = client.get("/ui/signers/binding/new")
+    assert r.status_code == 200, r.text
+    assert "Новая привязка" in r.text
+    assert "Сотрудник из Структуры" in r.text and "Должность в Структуре" in r.text

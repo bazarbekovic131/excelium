@@ -950,10 +950,12 @@ def signers_person(request: Request, fio: str = Form(...), position: str = Form(
     return RedirectResponse("/ui/signers?flash=Сохранено", status_code=302)
 
 
+# Пустая привязка обязана иметь ровно те же ключи, что и строка из базы:
+# форма читает их по имени, и недостающий ключ роняет страницу.
 EMPTY_BINDING = {"id": None, "company": "", "object_name": "", "set_name": "",
-                 "soglasovano_id": None, "soglasovano_position": "",
-                 "soglasovano_company": "", "utverzhdayu_id": None,
-                 "utverzhdayu_position": "", "utverzhdayu_company": ""}
+                 **{f"{role}{suffix}": None if suffix == "_id" else ""
+                    for role in ("soglasovano", "utverzhdayu")
+                    for suffix in ("_id", "_position", "_company", "_ref", "_dept")}}
 
 
 def _position_options(store) -> list[dict]:
