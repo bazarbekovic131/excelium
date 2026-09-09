@@ -9,6 +9,8 @@
 payload, и этот модуль перестаёт быть нужным.
 """
 import logging
+import re
+import unicodedata
 from pathlib import Path
 
 import yaml
@@ -16,6 +18,20 @@ import yaml
 log = logging.getLogger(__name__)
 
 EMPTY = ([0, 0], [0] * 8)  # нули гасятся IFERROR в формулах шаблона
+
+# Doc-V выводит название организации по-разному: то с кавычками-ёлочками,
+# то с прямыми, то с довеском вроде «(KZT)» или «(OLD)». Точное сравнение
+# на этом ломалось и давало реестр с нулями вместо подписантов, поэтому
+# ключи и запрос приводятся к общему виду.
+_QUOTES = dict.fromkeys(map(ord, '«»"\'“”„‘’'), None)
+_KZ_FOLD = str.maketrans("ұүқғңәөіһҰҮҚҒҢӘӨІҺ", "уукгнаоихуукгнаоих")
+
+
+def normalize_name(value) -> str:
+    text = unicodedata.normalize("NFC", str(value or ""))
+    text = re.sub(r"\s*\([^()]*\)\s*$", "", text)   # хвост в скобках
+    text = text.translate(_QUOTES).translate(_KZ_FOLD)
+    return re.sub(r"[\s\-]+", " ", text).strip().casefold()
 
 
 class ApproverMatrix:
@@ -26,9 +42,9 @@ class ApproverMatrix:
         for rule in raw["rules"]:
             value = (rule["directors"], lists[rule["approvers"]])
             for obj in rule["objects"]:
-                self._pairs[(rule["company"], obj)] = value
+                self._pairs[(normalize_name(rule["company"]), normalize_name(obj))] = value
         self._fallbacks = {
-            fb["company"]: (fb["directors"], lists[fb["approvers"]])
+            normalize_name(fb["company"]): (fb["directors"], lists[fb["approvers"]])
             for fb in raw.get("company_fallbacks", [])
         }
         excl = raw.get("expense_type_exclusions", {})
@@ -36,9 +52,9 @@ class ApproverMatrix:
         self._excl_ids = set(excl.get("remove_ids", []))
 
     def lookup(self, company: str, object_name: str) -> tuple[list[int], list[int]]:
-        found = self._pairs.get((company, object_name))
+        found = self._pairs.get((normalize_name(company), normalize_name(object_name)))
         if found is None:
-            found = self._fallbacks.get(company)
+            found = self._fallbacks.get(normalize_name(company))
         if found is None:
             log.warning(
                 "нет подписантов для пары компания/объект — реестр выйдет без подписей",

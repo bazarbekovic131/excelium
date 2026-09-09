@@ -2,8 +2,47 @@ from datetime import datetime
 import logging
 # from shutil import copy2
 from utils.scripts import format_row, set_border, find_last_row_in_col, load_excel, hide_sheets, create_concatenated_info, set_print_area, add_colontituls, set_cell_properties
+import re
 import utils.firmen_und_objekte as firmobj
 from openpyxl.styles import Alignment, Font, Border, Side
+
+EMPTY_MATCH = ([0] * 2, [0] * 8)
+
+
+def _variants(value):
+    """Написания названия, которые стоит попробовать в матрице.
+
+    Матрица сравнивает строки точно, поэтому «ТОО «Шар-Кұрылыс» (KZT)»,
+    прямые кавычки или лишний пробел дают нули вместо согласующих.
+    Doc-V со временем меняет способ вывода поля организации, и подбор
+    не должен от этого разваливаться.
+    """
+    seen, out = set(), []
+    base = str(value or "").strip()
+    for text in (base,
+                 re.sub(r"\s*\([^()]*\)\s*$", "", base).strip(),  # хвост «(KZT)», «(OLD)»
+                 re.sub(r"\s+", " ", base)):
+        for quoted in (text,
+                       text.replace('"', "«", 1).replace('"', "»", 1),
+                       text.replace("«", '"').replace("»", '"')):
+            candidate = quoted.strip()
+            if candidate and candidate not in seen:
+                seen.add(candidate)
+                out.append(candidate)
+    return out
+
+
+def lookup_coordinators(company, object_name):
+    """Подбор подписантов, устойчивый к написанию названий."""
+    for c in _variants(company):
+        for o in _variants(object_name):
+            found = firmobj.check_company_object_pair(c, o)
+            if found != EMPTY_MATCH:
+                return found
+    logging.warning(
+        "подписанты не найдены: компания %r, объект %r — реестр выйдет с нулями",
+        company, object_name)
+    return EMPTY_MATCH
 
 def add_coordinators_v4(sheet):
     '''
@@ -32,7 +71,7 @@ def add_coordinators_v4(sheet):
     object_name = sheet['G11'].value # Get the object name from the sheet
     doctype = sheet['H12'].value
 
-    directors, coordinators_list = firmobj.check_company_object_pair(company, object_name) # Get the coordinators for the company and object
+    directors, coordinators_list = lookup_coordinators(company, object_name)
     specified_types = ['коммерческие расходы', 'зарплата', 'налоги']
     if sheet['G17'].value.lower() in specified_types:
         coordinators_list = [i for i in coordinators_list if i not in [4, 6]] # remove selected approvers in payments of commercial expenses

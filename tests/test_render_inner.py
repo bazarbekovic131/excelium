@@ -76,3 +76,19 @@ def test_unknown_company_yields_blank_signatures(client, caplog):
     wb = _render(client, payload)
     sheet = wb[[s for s in wb.sheetnames if not s.startswith("СПР_")][0]]
     assert sheet["B2"].value == 0 and sheet["B4"].value == 0
+
+
+def test_company_name_variations_still_find_approvers(client):
+    """Doc-V меняет вид названия организации; подписанты не должны пропадать."""
+    matrix = client.app.state.approvers
+    expected = matrix.lookup("ТОО «Шар-Кұрылыс»", "Администрация")
+    assert expected[0] != [0, 0]
+    for variant in ('ТОО «Шар-Кұрылыс» (KZT)', 'ТОО "Шар-Кұрылыс"',
+                    'ТОО «Шар-Кұрылыс» ', 'ТОО  «Шар-Кұрылыс»(OLD)',
+                    'тоо «шар-курылыс»'):
+        assert matrix.lookup(variant, "Администрация") == expected, variant
+    # объект тоже: другой стиль кавычек
+    smu = matrix.lookup('ТОО "СМУ Аргон"', 'ЖК "Багыстан-1"')
+    assert smu == matrix.lookup('ТОО «СМУ Аргон»', 'ЖК «Багыстан-1»')
+    # неизвестная компания по-прежнему честно даёт пустой блок
+    assert matrix.lookup("ТОО «Никто»", "Нигде")[0] == [0, 0]
