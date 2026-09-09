@@ -1,8 +1,8 @@
 # Развёртывание Doc-V Gateway
 
 Сервер: 192.168.30.19, пользователь radmin, порт 25353.
-Старый сервис (excelium.service, порт 25351) не трогается до полного перевода
-действий Doc-V — см. план (вехи M2/M6).
+Старый сервис excelium (порт 25351) отключён — см. «Вывод старого
+сервиса» ниже.
 
 ## Первая установка
 
@@ -33,6 +33,33 @@ cd ~/Documents/docv-gateway && git pull
 sudo systemctl restart docv-gateway
 ```
 
+## Вывод старого сервиса excelium (сделано)
+
+Порядок важен: сначала гасится юнит, потом приходит обновление, которое
+удаляет его код. Наоборот — gunicorn останется без файлов.
+
+```
+sudo systemctl disable --now excelium.service
+cd ~/Documents/api_excel
+cp utils/firmen_und_objekte.py ~/firmen_backup.py     # матрица нужна дальше
+diff <(md5sum excel_templates/*.xlsx | awk '{print $1}') \
+     <(md5sum templates/excel/*.xlsx | awk '{print $1}')   # пусто = копии совпали
+git pull
+python3 scripts/approvers_from_py.py > data/approvers.yaml
+sudo systemctl restart docv-gateway
+curl -s localhost:25353/health
+```
+
+Что уходит: `app.py`, `config.py`, `core/`, `models/`, `routes/`,
+`utils/*.py` кроме матрицы, `excelium.service`, `scripts/parity_check.py`
+(сверял старый рендер с новым, сверять больше не с чем). Код остаётся в
+истории репозитория.
+
+Что можно удалить руками, когда перестанет быть жалко: `saves/`
+(выдача старого сервиса), `excel_templates/` (после проверки diff выше),
+`myenv/` (его окружение с Flask и gunicorn). Порт 25351 не
+переиспользуется.
+
 ## Что нужно для отдельных модулей
 
 - /render/typst — бинарь `typst`. Под systemd PATH урезан
@@ -52,10 +79,14 @@ sudo systemctl restart docv-gateway
 
 ## Данные, которых нет в git
 
-`utils/firmen_und_objekte.py` (матрица подписантов) и `excel_templates/`
-(шаблоны с листом СПР_ПОДПИСАНТОВ) — боевые данные: их правят на
-сервере, поэтому в репозитории их нет и быть не должно. При
-развёртывании на новой машине их переносят руками.
+`utils/firmen_und_objekte.py` (матрица подписантов) — персональные
+данные: их правят на сервере, поэтому в репозитории их нет и быть не
+должно. При развёртывании на новой машине файл переносят руками.
+
+Шаблоны Excel, наоборот, лежат в git — `templates/excel/`. Каталог
+`excel_templates/` рядом остался от отключённого сервиса excelium; шлюз
+его не читает. Правка шаблона теперь идёт через репозиторий: изменили,
+закоммитили, `git pull` на сервере.
 
 Справочник шлюза `data/approvers.yaml` собирается из матрицы на месте:
 

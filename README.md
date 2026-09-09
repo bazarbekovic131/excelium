@@ -1,28 +1,59 @@
-# Diese Datei ist von Bazarbekov Akhmet vorbereitet
+# Doc-V Gateway
 
-# Diese API ist dafür designiert, um Dateien von DOC-V nach Excel zu verwandeln
+Шлюз между Doc-V (192.168.30.29) и всем, что Doc-V делать не умеет или
+умеет только за деньги. Работает на 192.168.30.19:25353, разговаривает с
+Doc-V единственным бесплатным действием «HTTP-запрос».
 
-Erstellungsdatum: 1 Jänner, 2024
+Что делает:
 
-Erste Schritte zum Umsetzen:
+- **Реестры платежей** — Excel по JSON из Doc-V: внутренний, внешний,
+  реестр предстоящих платежей.
+- **Документы Typst** — PDF по шаблонам, которые правятся прямо в
+  веб-интерфейсе; карточка договора с листом согласования.
+- **Операции** — команды на сервере из белого списка `ops.yaml`
+  (замена платного действия «Запуск»).
+- **Очередь заданий** — Doc-V опрашивает `/jobs/pending` по расписанию и
+  забирает задания от внешних систем (замена платного входящего «REST API»).
+- **Справочник сотрудников** — Doc-V присылает состав, шлюз подставляет
+  должности и ФИО в документы.
+- **Веб-интерфейс** `/ui` — журнал вызовов, файлы, шаблоны, настройки.
 
-Verbindung zum Datenträger-Server (über SSH)
-Ziehen nach Documents/api/excel
-Virtuelle Umgebung aktivieren: source myenv/bin/activate
-WSGI Server mit folgenden Parametern einstellen: gunicorn -w 4 -b host:port app:app
-HOST und PORT sind in Flask-Application definiert
+## Запуск
 
-# Optional:
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+cp .env.example .env          # заполнить токены, chmod 600
+.venv/bin/python -m uvicorn gateway.main:app --port 25353
+.venv/bin/python -m pytest -q
+```
 
--logging - schaltet logging ein
--limit - verteidigt jemal den Server von DDoS (Distributed Denial of Service) Attacks
+Разбор конфигурации и юнита — [deploy/README-deploy.md](deploy/README-deploy.md),
+настройка на стороне Doc-V — [deploy/README-docv.md](deploy/README-docv.md).
 
-# gunicorn deaktivieren: pkill gunicorn
+## Данные, которых нет в git
 
-# Beschreibungen der Funktionen:
+Живут только на сервере, `git pull` их не трогает:
 
-1.  set_border - setzt alle Seiten der Zelle/Zellen auf schmale schwarze Linie
-2.  format_row - Formatiert die sogenannte Stroke besprechend zum Format von LOTUS REESTR (von Stawitzkaja E. gesendet)
-3.  hide_sheets - hindert die ausgewählte Excel-Papier
+| Что | Где | Зачем |
+|---|---|---|
+| Матрица подписантов | `utils/firmen_und_objekte.py` | персональные данные |
+| Токены | `.env` | секреты |
+| Файлы, база, журналы | `var/` | состояние сервиса |
 
-# API updaten: der Muster fur das Hineinladen der PY Dateien an den Server lautet: scp -r ~/Documents/api_excel/template_outer.xlsx radmin@192.168.30.19:~/Documents/api_excel
+Из матрицы собирается справочник шлюза, и после каждой её правки его
+надо пересобрать, иначе реестр уйдёт со старым составом подписантов:
+
+```bash
+python3 scripts/approvers_from_py.py > data/approvers.yaml
+sudo systemctl restart docv-gateway
+```
+
+Шлюз пишет об этом предупреждение при старте, если матрица свежее
+справочника.
+
+## История
+
+До сентября 2026 года здесь жил сервис excelium на Flask (порт 25351):
+он умел только реестры и хранил настройки внутри кода. Реестры
+переведены на шлюз со сверкой ячейка в ячейку, старый сервис отключён,
+его код остался в истории репозитория. Порт 25351 не переиспользуется.

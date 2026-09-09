@@ -7,14 +7,26 @@
 
 Содержимое исходного файла не меняется — он остаётся источником правды.
 """
+import argparse
+import importlib.util
 import re
 import sys
 from pathlib import Path
 
 import yaml
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import utils.firmen_und_objekte as fu  # noqa: E402
+MATRIX_PATH = Path(__file__).resolve().parent.parent / "utils" / "firmen_und_objekte.py"
+
+
+def load_matrix(path: Path):
+    """Матрица подключается по пути, а не импортом пакета: сам файл лежит
+    вне git, и никакого кода вокруг него в репозитории больше нет."""
+    if not path.exists():
+        sys.exit(f"нет файла матрицы: {path}")
+    spec = importlib.util.spec_from_file_location("firmen_und_objekte", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 HEADER = """# Матрица подписантов реестров платежей.
 #
@@ -31,6 +43,11 @@ HEADER = """# Матрица подписантов реестров плате�
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Пересборка data/approvers.yaml")
+    parser.add_argument("--matrix", type=Path, default=MATRIX_PATH,
+                        help=f"путь к матрице (по умолчанию {MATRIX_PATH})")
+    fu = load_matrix(parser.parse_args().matrix)
+
     lists, by_ids = {}, {}
     for n in range(1, 10):
         values = list(getattr(fu, f"approver_ids_{n}").values())
