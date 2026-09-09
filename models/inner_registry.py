@@ -3,46 +3,75 @@ import logging
 # from shutil import copy2
 from utils.scripts import format_row, set_border, find_last_row_in_col, load_excel, hide_sheets, create_concatenated_info, set_print_area, add_colontituls, set_cell_properties
 import re
+import sys
 import utils.firmen_und_objekte as firmobj
 from openpyxl.styles import Alignment, Font, Border, Side
 
 EMPTY_MATCH = ([0] * 2, [0] * 8)
 
+# Названия приходят из Doc-V и со временем меняют написание: кавычки-ёлочки
+# против прямых, довесок «(KZT)», казахские буквы вместо русских похожих
+# («Шар-Құрылыс» против «Шар-Кұрылыс»). Матрица сравнивает строки точно,
+# поэтому любое такое расхождение оставляло реестр без подписантов — нули
+# в блоке подписей. Здесь оба конца приводятся к общему виду.
+_QUOTES = dict.fromkeys(map(ord, '«»"\'“”„‘’'), None)
+_KZ_FOLD = str.maketrans("ҚқҰұҮүҒғҢңӘәӨөІіҺһ", "ккууукггннааооииxx")
 
-def _variants(value):
-    """Написания названия, которые стоит попробовать в матрице.
 
-    Матрица сравнивает строки точно, поэтому «ТОО «Шар-Кұрылыс» (KZT)»,
-    прямые кавычки или лишний пробел дают нули вместо согласующих.
-    Doc-V со временем меняет способ вывода поля организации, и подбор
-    не должен от этого разваливаться.
-    """
-    seen, out = set(), []
-    base = str(value or "").strip()
-    for text in (base,
-                 re.sub(r"\s*\([^()]*\)\s*$", "", base).strip(),  # хвост «(KZT)», «(OLD)»
-                 re.sub(r"\s+", " ", base)):
-        for quoted in (text,
-                       text.replace('"', "«", 1).replace('"', "»", 1),
-                       text.replace("«", '"').replace("»", '"')):
-            candidate = quoted.strip()
-            if candidate and candidate not in seen:
-                seen.add(candidate)
-                out.append(candidate)
-    return out
+def _norm(value):
+    text = str(value or "").translate(_QUOTES).translate(_KZ_FOLD)
+    text = re.sub(r"\s*\([^()]*\)\s*$", "", text)   # хвост «(KZT)», «(OLD)»
+    return re.sub(r"[\s\-]+", " ", text).strip().casefold()
+
+
+def _tables():
+    """Достаёт таблицы из check_company_object_pair, не меняя сам файл:
+    он боевой, правится вручную и в git не хранится."""
+    captured = {}
+
+    def tracer(frame, event, arg):
+        if event == "return" and frame.f_code.co_name == "check_company_object_pair":
+            captured.update(frame.f_locals)
+        return tracer
+
+    previous = sys.gettrace()
+    try:
+        sys.settrace(tracer)
+        firmobj.check_company_object_pair("-", "-")
+    finally:
+        sys.settrace(previous)
+    return (captured.get("company_object_pairs") or {},
+            captured.get("company_list") or {})
+
+
+def _build_index():
+    pairs, fallbacks = _tables()
+    return ({(_norm(c), _norm(o)): v for (c, o), v in pairs.items()},
+            {_norm(c): v for c, v in fallbacks.items()})
+
+
+try:
+    _PAIRS, _FALLBACKS = _build_index()
+except Exception:                                    # структура файла изменилась
+    logging.exception("не удалось разобрать матрицу подписантов")
+    _PAIRS, _FALLBACKS = {}, {}
 
 
 def lookup_coordinators(company, object_name):
     """Подбор подписантов, устойчивый к написанию названий."""
-    for c in _variants(company):
-        for o in _variants(object_name):
-            found = firmobj.check_company_object_pair(c, o)
-            if found != EMPTY_MATCH:
-                return found
-    logging.warning(
-        "подписанты не найдены: компания %r, объект %r — реестр выйдет с нулями",
-        company, object_name)
-    return EMPTY_MATCH
+    found = firmobj.check_company_object_pair(company, object_name)
+    if found != EMPTY_MATCH:
+        return found
+    found = _PAIRS.get((_norm(company), _norm(object_name)))
+    if found is None:
+        found = _FALLBACKS.get(_norm(company))
+    if found is None:
+        logging.warning(
+            "подписанты не найдены: компания %r, объект %r — реестр выйдет с нулями",
+            company, object_name)
+        return EMPTY_MATCH
+    return found
+
 
 def add_coordinators_v4(sheet):
     '''
