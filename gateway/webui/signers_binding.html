@@ -45,6 +45,13 @@
         <div class="grid-third">
           <select name="{{ role }}_slot">
             <option value="">— не печатать —</option>
+            <optgroup label="Сотрудник из Структуры — подпись всегда от него">
+              {% for person in staff %}
+              <option value="{{ person.value }}" {{ 'selected' if person.value == slots[role] }}>
+                {{ person.fio }}{% if person.position %} · {{ person.position }}{% endif %}{% if person.department %} · {{ person.department }}{% endif %}
+              </option>
+              {% endfor %}
+            </optgroup>
             <optgroup label="Должность в Структуре — подставит того, кто её занимает сейчас">
               {% for pos in positions %}
               <option value="{{ pos.value }}" {{ 'selected' if pos.value == slots[role] }}>
@@ -58,13 +65,16 @@
               {% endfor %}
             </optgroup>
           </select>
-          <input type="text" name="{{ role }}_position" placeholder="должность в подписи"
+          <input type="text" name="{{ role }}_position" list="gwpositions"
+                 placeholder="должность шлюза — она и печатается"
                  value="{{ binding[role ~ '_position'] }}">
           <input type="text" name="{{ role }}_company" placeholder="компания в подписи"
                  value="{{ binding[role ~ '_company'] }}">
         </div>
-        <div class="hint" style="margin-top:6px">Должность и компания печатаются из этих
-          двух полей; из Структуры берутся только ФИО и текущий сотрудник.</div>
+        <div class="hint" style="margin-top:6px">Печатается должность шлюза из среднего
+          поля, а не должность из Структуры: в Doc-V она одна на человека, а подписывать
+          он может как директор разных компаний. Своё название можно вписать — каталог
+          подхватит.</div>
       </div>
       {% endfor %}
 
@@ -81,6 +91,10 @@
     {% endif %}
   </div>
 </div>
+
+<datalist id="gwpositions">
+  {% for name in gateway_positions %}<option value="{{ name }}">{% endfor %}
+</datalist>
 
 {% if preview %}
 <div class="card">

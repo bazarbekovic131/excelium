@@ -197,3 +197,56 @@ def test_positions_list_shows_holders(client):
     prorab = next(p for p in positions if p["position"] == "Прораб")
     assert prorab["department"] == "СМР"
     assert prorab["holders"] == ["Второй П.П.", "Первый И.И."]
+
+
+def test_employee_reference_keeps_person_and_gateway_position(client):
+    """Второй способ: выбрать сотрудника по uid и дать ему должность
+    шлюза. Печатается должность шлюза, а не та, что в Структуре."""
+    store = client.app.state.signers
+    _structura(client, [{"uid": "05ab617e-6fff", "display_name": "ДРС",
+                         "position": "Начальник участка",
+                         "department": "МЖК New Line",
+                         "department_uid": "a0227bc0-580a"}])
+    store.save_binding(company="ТОО «Уид»", object_name="", set_name="list_1",
+                       soglasovano=None,
+                       utverzhdayu={"ref": "05ab617e-6fff",
+                                    "position": "Генеральный директор",
+                                    "company": "ТОО «Уид»"})
+    signer = store.resolve("ТОО «Уид»")["utverzhdayu"]
+    assert signer["fio"] == "ДРС"
+    assert signer["position"] == "Генеральный директор"   # должность шлюза
+    assert signer["company"] == "ТОО «Уид»"
+
+    # Doc-V переименовал сотрудника — подпись идёт за ним
+    _structura(client, [{"uid": "05ab617e-6fff", "display_name": "Дюсенов Р.С.",
+                         "position": "Заместитель директора",
+                         "department": "МЖК New Line"}])
+    again = store.resolve("ТОО «Уид»")["utverzhdayu"]
+    assert again["fio"] == "Дюсенов Р.С."
+    assert again["position"] == "Генеральный директор"
+
+
+def test_gateway_position_catalogue(client):
+    store = client.app.state.signers
+    catalogue = store.gateway_positions()
+    assert "Генеральный директор" in catalogue and "Главный бухгалтер" in catalogue
+    # должность, набранная руками, попадает в каталог сама
+    person = store.people()[0]
+    store.save_binding(company="ТОО «Каталог»", object_name="", set_name="list_1",
+                       soglasovano=None,
+                       utverzhdayu={"person_id": person["id"],
+                                    "position": "Управляющий партнёр",
+                                    "company": "ТОО «Каталог»"})
+    assert "Управляющий партнёр" in store.gateway_positions()
+    store.delete_position("Управляющий партнёр")
+    assert "Управляющий партнёр" not in store.gateway_positions()
+    # из каталога убрали, а подпись осталась прежней
+    assert store.resolve("ТОО «Каталог»")["utverzhdayu"]["position"] == "Управляющий партнёр"
+
+
+def test_staff_without_position_still_selectable(client):
+    """Запись без должности годится как сотрудник, но не как должность."""
+    _structura(client, [{"uid": "u-30", "display_name": "Безлошадный Б.Б."}])
+    store = client.app.state.signers
+    assert any(p["uid"] == "u-30" for p in store.staff())
+    assert not any(p["position"] == "" for p in store.positions())

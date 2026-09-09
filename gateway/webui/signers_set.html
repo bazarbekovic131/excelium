@@ -1,5 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Набор {{ name }} — Doc-V Gateway{% endblock %}
+{% block title %}Набор {{ name }} — Doc-V Gateway<datalist id="gwpositions">
+  {% for name in gateway_positions %}<option value="{{ name }}">{% endfor %}
+</datalist>
+{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
@@ -22,7 +25,7 @@
     <form method="post" action="/ui/signers/set/{{ name }}/save">
       <table>
         <thead><tr>
-          <th style="width:34px">№</th><th style="width:270px">Кто подписывает</th><th>Должность в подписи</th>
+          <th style="width:34px">№</th><th style="width:270px">Кто подписывает</th><th>Должность шлюза — печатается</th>
           <th>Компания в подписи</th><th style="width:130px">Заголовок над подписью</th>
           <th style="width:200px">Пропустить при затратах</th>
         </tr></thead>
@@ -33,6 +36,13 @@
           <td>
             <select name="slot">
               <option value="">— убрать строку —</option>
+              <optgroup label="Сотрудник из Структуры">
+                {% for person in staff %}
+                <option value="{{ person.value }}" {{ 'selected' if person.value == row.slot }}>
+                  {{ person.fio }}{% if person.position %} · {{ person.position }}{% endif %}
+                </option>
+                {% endfor %}
+              </optgroup>
               <optgroup label="Должность в Структуре">
                 {% for pos in positions %}
                 <option value="{{ pos.value }}" {{ 'selected' if pos.value == row.slot }}>
@@ -48,7 +58,7 @@
             </select>
           </td>
           <td><input type="text" name="position" value="{{ row.position }}"
-                     placeholder="{{ row.default_position }}"></td>
+                     list="gwpositions" placeholder="{{ row.default_position }}"></td>
           <td><input type="text" name="print_company" value="{{ row.print_company }}"></td>
           <td><input type="text" name="mark" value="{{ row.mark }}"></td>
           <td><input type="text" name="skip_expense_types" value="{{ row.skip_expense_types }}"></td>
@@ -63,4 +73,7 @@
     </form>
   </div>
 </div>
+<datalist id="gwpositions">
+  {% for name in gateway_positions %}<option value="{{ name }}">{% endfor %}
+</datalist>
 {% endblock %}

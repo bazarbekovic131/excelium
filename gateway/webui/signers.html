@@ -79,6 +79,31 @@
 
   <div class="card">
     <div class="card-head">
+      <span class="card-title">Должности шлюза</span>
+      <span class="card-note">именно они печатаются в подписи</span>
+    </div>
+    <div class="card-body">
+      <form method="post" action="/ui/signers/position" class="inline"
+            style="display:flex;gap:6px;margin-bottom:12px">
+        <input type="text" name="name" placeholder="Новая должность" required>
+        <button class="btn" data-busy="…">Добавить</button>
+      </form>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        {% for name in gateway_positions %}
+        <form method="post" action="/ui/signers/position" class="inline"
+              onsubmit="return confirm('Убрать «{{ name }}» из каталога? На уже сохранённые подписи это не влияет.')">
+          <input type="hidden" name="delete" value="{{ name }}">
+          <button class="chip neutral" style="border:0;cursor:pointer" title="Убрать">{{ name }} ✕</button>
+        </form>
+        {% else %}
+        <div class="empty">Каталог пуст</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
       <span class="card-title">Люди</span>
       <span class="card-note">ФИО и должность по умолчанию; должность в подписи задаёт привязка</span>
     </div>

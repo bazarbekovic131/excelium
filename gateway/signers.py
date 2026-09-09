@@ -140,30 +140,63 @@ class SignerStore:
                     "SELECT COUNT(*) c FROM signer_people WHERE docv_uid <> ''").fetchone()["c"],
             }
 
+    # --- должности шлюза --------------------------------------------------
+
+    def gateway_positions(self) -> list[str]:
+        """Каталог должностей шлюза. В подпись печатается именно он, а не
+        должность из Структуры: у Doc-V она одна на человека, а подписывать
+        он может как директор разных компаний."""
+        with connect(self.db_path) as conn:
+            return [r["name"] for r in conn.execute(
+                "SELECT name FROM signer_positions ORDER BY name")]
+
+    def add_position(self, name: str) -> str:
+        name = str(name or "").strip()
+        if not name:
+            return ""
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        with connect(self.db_path) as conn:
+            conn.execute("INSERT OR IGNORE INTO signer_positions (name, updated_at)"
+                         " VALUES (?,?)", (name, now))
+        return name
+
+    def delete_position(self, name: str) -> None:
+        with connect(self.db_path) as conn:
+            conn.execute("DELETE FROM signer_positions WHERE name = ?", (name,))
+
+    def _remember_positions(self, *names) -> None:
+        """Должность, набранную руками, каталог подхватывает сам — иначе
+        в ста тринадцати привязках развелись бы опечатки."""
+        for name in names:
+            self.add_position(name)
+
     # --- Структура Doc-V: кто сейчас занимает должность -------------------
 
     def staff(self) -> list[dict]:
-        """Сотрудники из выгрузки Doc-V — те записи, где есть должность."""
+        """Сотрудники из выгрузки Doc-V. Записи без имени пропускаются:
+        подписывать нечем."""
         out = []
         with connect(self.db_path) as conn:
             rows = conn.execute("SELECT name, uid, data FROM directories").fetchall()
         for row in rows:
             data = json.loads(row["data"])
-            position = str(data.get("position") or "").strip()
-            if not position:
+            fio = str(data.get("name") or data.get("display_name") or "").strip()
+            if not fio:
                 continue
-            out.append({"uid": row["uid"],
-                        "fio": str(data.get("name") or data.get("display_name") or "").strip(),
-                        "position": position,
+            out.append({"uid": row["uid"], "fio": fio,
+                        "position": str(data.get("position") or "").strip(),
                         "department": str(data.get("department") or "").strip(),
+                        "department_uid": str(data.get("department_uid") or "").strip(),
                         "directory": row["name"]})
-        return out
+        return sorted(out, key=lambda p: p["fio"])
 
     def positions(self) -> list[dict]:
         """Должности из Структуры для выпадающих списков: сама должность,
         отдел и кто её сейчас занимает."""
         grouped: dict[tuple[str, str], list[str]] = {}
         for person in self.staff():
+            if not person["position"]:
+                continue
             grouped.setdefault((person["position"], person["department"]), []).append(
                 person["fio"])
         return [{"position": position, "department": department,
@@ -171,18 +204,22 @@ class SignerStore:
                 for (position, department), holders in sorted(grouped.items())]
 
     def _holder(self, staff: list[dict], ref: str, dept: str) -> dict | None:
-        """Текущий сотрудник по ссылке на должность. Ссылка сравнивается и
-        с должностью, и с uid записи: Doc-V шлёт то название, то шифр."""
+        """Кого подставить по ссылке. Ссылкой может быть uid сотрудника —
+        тогда подпись всегда от него, а ФИО обновляется вслед за Doc-V —
+        либо название должности: тогда подставляется тот, кто занимает её
+        сейчас, и подпись переезжает вместе с назначением."""
         ref = str(ref or "").strip()
         if not ref:
             return None
         dept = str(dept or "").strip()
-        found = [p for p in staff
-                 if (p["position"] == ref or p["uid"] == ref)
+        by_uid = [p for p in staff if p["uid"] == ref]
+        if by_uid:
+            return by_uid[0]
+        found = [p for p in staff if p["position"] == ref
                  and (not dept or p["department"] == dept)]
         if not found:
-            log.warning("должность из Структуры не занята — подпись останется пустой",
-                        extra={"data": {"position_ref": ref, "department": dept}})
+            log.warning("в Структуре никого нет по этой ссылке — подпись останется пустой",
+                        extra={"data": {"ref": ref, "department": dept}})
             return None
         if len(found) > 1:
             log.warning("должность занимают несколько человек — беру первого по алфавиту",
@@ -341,6 +378,7 @@ class SignerStore:
                   right.get("person_id") or None, (right.get("position") or "").strip(),
                   (right.get("company") or "").strip(), (right.get("ref") or "").strip(),
                   (right.get("dept") or "").strip())
+        self._remember_positions(left.get("position"), right.get("position"))
         with connect(self.db_path) as conn:
             if binding_id:
                 conn.execute(
@@ -381,6 +419,7 @@ class SignerStore:
         name = name.strip()
         if not name:
             raise ValueError("имя набора обязательно")
+        self._remember_positions(*[e.get("position") for e in entries])
         with connect(self.db_path) as conn:
             conn.execute("DELETE FROM signer_sets WHERE name = ?", (name,))
             conn.executemany(
@@ -474,6 +513,9 @@ class SignerStore:
                     " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     (company, normalize_name(company), obj, normalize_object(obj),
                      set_name, *left, *right))
+            conn.executemany(
+                "INSERT OR IGNORE INTO signer_positions (name, updated_at) VALUES (?,?)",
+                [(position, now) for _fio, position, _company in spr.values() if position])
             count = conn.execute(
                 "SELECT COUNT(*) c FROM signer_bindings").fetchone()["c"]
             people = conn.execute(

@@ -60,6 +60,10 @@ CREATE TABLE IF NOT EXISTS signer_people (
   docv_uid TEXT NOT NULL DEFAULT '',
   updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS signer_positions (
+  name TEXT PRIMARY KEY,
+  updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS signer_sets (
   name TEXT NOT NULL,
   ord INTEGER NOT NULL,

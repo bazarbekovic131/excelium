@@ -902,6 +902,7 @@ def signers_page(request: Request, search: str = "", flash: str = "", flash_err:
     return _page(request, "signers.html", "signers", search=search,
                  bindings=_binding_rows(store, search), sets=store.sets(),
                  people=store.people(), stats=store.stats(),
+                 gateway_positions=store.gateway_positions(),
                  flash=flash, flash_err=bool(flash_err))
 
 
@@ -920,6 +921,22 @@ def signers_link(request: Request):
         flash += (f" Не нашли в Doc-V: {result['unmatched']} — им подпись идёт"
                   " по записи справочника.")
     return RedirectResponse(f"/ui/signers?flash={flash}", status_code=302)
+
+
+@router.post("/ui/signers/position")
+def signers_position(request: Request, name: str = Form(default=""),
+                     delete: str = Form(default="")):
+    store = request.app.state.signers
+    if delete:
+        store.delete_position(delete)
+        return RedirectResponse(f"/ui/signers?flash=Должность «{delete}» убрана из каталога",
+                                status_code=302)
+    added = store.add_position(name)
+    if not added:
+        return RedirectResponse("/ui/signers?flash=Пустое название&flash_err=1",
+                                status_code=302)
+    return RedirectResponse(f"/ui/signers?flash=Должность «{added}» в каталоге",
+                            status_code=302)
 
 
 @router.post("/ui/signers/person")
@@ -941,9 +958,15 @@ EMPTY_BINDING = {"id": None, "company": "", "object_name": "", "set_name": "",
 
 def _position_options(store) -> list[dict]:
     """Должности из Структуры для выпадающих списков — с теми, кто их
-    сейчас занимает: по одному шифру должности человека не узнать."""
+    сейчас занимает: по одному названию должности человека не узнать."""
     return [{**pos, "value": slot_value(pos["position"], pos["department"])}
             for pos in store.positions()]
+
+
+def _staff_options(store) -> list[dict]:
+    """Сотрудники из Структуры: ссылка идёт на uid, поэтому подпись
+    останется за этим человеком, даже если его должность там сменится."""
+    return [{**person, "value": slot_value(person["uid"])} for person in store.staff()]
 
 
 @router.get("/ui/signers/binding/{binding_id}")
@@ -964,7 +987,8 @@ def signers_binding(request: Request, binding_id: str, flash: str = ""):
              for role in ("soglasovano", "utverzhdayu")}
     return _page(request, "signers_binding.html", "signers", binding=binding,
                  people=store.people(), set_names=sorted(store.sets()),
-                 positions=_position_options(store), slots=slots,
+                 positions=_position_options(store), staff=_staff_options(store),
+                 gateway_positions=store.gateway_positions(), slots=slots,
                  preview=preview, flash=flash, flash_err=False)
 
 
@@ -1012,6 +1036,8 @@ def signers_set(request: Request, name: str, add: int = 0, flash: str = ""):
     used = sum(1 for b in store.bindings() if b["set_name"] == name)
     return _page(request, "signers_set.html", "signers", name=name, rows=rows,
                  people=store.people(), positions=_position_options(store),
+                 staff=_staff_options(store),
+                 gateway_positions=store.gateway_positions(),
                  used=used, flash=flash, flash_err=False)
 
 
