@@ -50,6 +50,15 @@ def normalize_name(value) -> str:
     return re.sub(r"[\s\-]+", " ", text).strip().casefold()
 
 
+def normalize_object(value) -> str:
+    """Объект нормализуется мягче компании: у объектов хвост в скобках —
+    это и есть различие («Школа (Нұра)» и «Школа (Тельман)» — разные
+    стройки), а у компаний это мусор вроде «(KZT)»."""
+    text = unicodedata.normalize("NFC", str(value or ""))
+    text = text.translate(_QUOTES).translate(_KZ_FOLD)
+    return re.sub(r"[\s\-]+", " ", text).strip().casefold()
+
+
 def fio_key(value) -> str:
     """Фамилия и инициалы: «Аманов Б.Ш.» и «Аманов Бауыржан Шарипович»
     должны сойтись — в шаблоне писали инициалами, Doc-V шлёт полностью."""
@@ -113,7 +122,7 @@ class SignerStore:
         """-> {"soglasovano": …|None, "utverzhdayu": …|None,
                 "coordinators": [...], "source": …}."""
         company_key = normalize_name(company)
-        object_key = normalize_name(object_name)
+        object_key = normalize_object(object_name)
         with connect(self.db_path) as conn:
             row = conn.execute(
                 "SELECT * FROM signer_bindings WHERE company_key = ? AND object_key = ?",
@@ -226,7 +235,7 @@ class SignerStore:
         object_name = object_name.strip()
         left = soglasovano or {}
         right = utverzhdayu or {}
-        values = (company, normalize_name(company), object_name, normalize_name(object_name),
+        values = (company, normalize_name(company), object_name, normalize_object(object_name),
                   set_name.strip(),
                   left.get("person_id") or None, (left.get("position") or "").strip(),
                   (left.get("company") or "").strip(),
@@ -340,7 +349,6 @@ class SignerStore:
                 _fio, position, company = spr[number]
                 return (ids[number], position, company)
 
-            count = 0
             pairs = [(rule["company"], obj, rule["approvers"], rule["directors"])
                      for rule in raw.get("rules", []) for obj in rule["objects"]]
             pairs += [(fb["company"], "", fb["approvers"], fb["directors"])
@@ -354,10 +362,14 @@ class SignerStore:
                     " soglasovano_position, soglasovano_company, utverzhdayu_id,"
                     " utverzhdayu_position, utverzhdayu_company)"
                     " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                    (company, normalize_name(company), obj, normalize_name(obj),
+                    (company, normalize_name(company), obj, normalize_object(obj),
                      set_name, *left, *right))
-                count += 1
+            count = conn.execute(
+                "SELECT COUNT(*) c FROM signer_bindings").fetchone()["c"]
+            people = conn.execute(
+                "SELECT COUNT(*) c FROM signer_people").fetchone()["c"]
         log.info("справочник подписантов наполнен",
-                 extra={"data": {"bindings": count, "people": len(spr)}})
+                 extra={"data": {"bindings": count, "people": people,
+                                 "spr_rows": len(spr)}})
         return count
 

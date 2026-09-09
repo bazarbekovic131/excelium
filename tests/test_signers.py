@@ -117,3 +117,21 @@ def test_person_edit_changes_every_signature(client):
     store.save_person(person["id"], "Омарова Гульнара Алиевна", "Главный бухгалтер")
     resolved = store.resolve("ТОО «Шар-Кұрылыс»", "Администрация")
     assert any(c["fio"] == "Омарова Гульнара Алиевна" for c in resolved["coordinators"])
+
+
+def test_objects_with_brackets_stay_distinct(client):
+    """У объектов скобки — это различие: «Школа (Нұра)» и «Школа (Тельман)»
+    разные стройки. У компаний скобки — мусор вроде «(KZT)»."""
+    store = client.app.state.signers
+    objects = {b["object_name"] for b in store.bindings()
+               if b["company"] == 'ТОО "СМУ Аргон"'}
+    assert {"Школа (Нұра)", "Школа (Тельман)", "Школа (Уркер)"} <= objects
+    person = store.people()[0]
+    store.save_binding(company='ТОО "СМУ Аргон"', object_name="Школа (Нұра)",
+                       set_name="list_1", soglasovano=None,
+                       utverzhdayu={"person_id": person["id"], "position": "Прораб",
+                                    "company": "тест"})
+    assert store.resolve('ТОО "СМУ Аргон"', "Школа (Нұра)")["utverzhdayu"]["position"] \
+        == "Прораб"
+    other = store.resolve('ТОО "СМУ Аргон"', "Школа (Тельман)")
+    assert other["utverzhdayu"] is None or other["utverzhdayu"]["position"] != "Прораб"
