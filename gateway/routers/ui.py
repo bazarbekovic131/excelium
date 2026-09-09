@@ -924,8 +924,11 @@ def signers_page(request: Request, search: str = "", company: str = "",
         rows = [r for r in rows if r["company"] == company]
     return _page(request, "signers.html", "signers", search=search, company=company,
                  bindings=rows, cards=cards, sets=store.sets(),
-                 people=store.people(), stats=store.stats(),
+                 people=store.people(), people_usage=store.people_usage(),
+                 stats=store.stats(),
                  gateway_positions=store.gateway_positions(),
+                 position_cards=store.position_cards(),
+                 staff=_staff_options(store),
                  flash=flash, flash_err=bool(flash_err))
 
 
@@ -951,14 +954,36 @@ def signers_position(request: Request, name: str = Form(default=""),
                      delete: str = Form(default="")):
     store = request.app.state.signers
     if delete:
+        used = store.position_usage(delete)
+        if used:
+            return RedirectResponse(
+                f"/ui/signers?flash=На должность «{delete}» ссылаются {used} подписей."
+                " Сначала переключите их&flash_err=1", status_code=302)
         store.delete_position(delete)
+        audit_log("signers_position_deleted", name=delete)
         return RedirectResponse(f"/ui/signers?flash=Должность «{delete}» убрана из каталога",
                                 status_code=302)
     added = store.add_position(name)
     if not added:
         return RedirectResponse("/ui/signers?flash=Пустое название&flash_err=1",
                                 status_code=302)
-    return RedirectResponse(f"/ui/signers?flash=Должность «{added}» в каталоге",
+    return RedirectResponse(f"/ui/signers?flash=Должность «{added}» в каталоге."
+                            " Назначьте на неё человека", status_code=302)
+
+
+@router.post("/ui/signers/position/assign")
+def signers_position_assign(request: Request, name: str = Form(...),
+                            slot: str = Form(default="")):
+    """Кого назначить на должность шлюза. Меняется в одном месте — и
+    меняется во всех подписях, которые на эту должность ссылаются."""
+    store = request.app.state.signers
+    chosen = parse_slot(slot)
+    store.assign_position(name, holder_uid=chosen["ref"],
+                          holder_person_id=chosen["person_id"])
+    audit_log("signers_position_assigned", name=name, holder=slot)
+    used = store.position_usage(name)
+    tail = f" Подписей, где она используется: {used}." if used else ""
+    return RedirectResponse(f"/ui/signers?flash=Назначение для «{name}» сохранено.{tail}",
                             status_code=302)
 
 
@@ -1027,7 +1052,8 @@ def signers_binding(request: Request, binding_id: str, flash: str = ""):
     return _page(request, "signers_binding.html", "signers", binding=binding,
                  people=store.people(), set_names=sorted(store.sets()),
                  positions=_position_options(store), staff=_staff_options(store),
-                 gateway_positions=store.gateway_positions(), slots=slots,
+                 gateway_positions=store.gateway_positions(),
+                 position_cards=store.position_cards(), slots=slots,
                  preview=preview, flash=flash, flash_err=False)
 
 
@@ -1077,6 +1103,7 @@ def signers_set(request: Request, name: str, add: int = 0, flash: str = ""):
                  people=store.people(), positions=_position_options(store),
                  staff=_staff_options(store),
                  gateway_positions=store.gateway_positions(),
+                 position_cards=store.position_cards(),
                  used=used, flash=flash, flash_err=False)
 
 

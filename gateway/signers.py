@@ -81,10 +81,19 @@ def _person(fio: str, position: str, company: str, mark: str = "") -> dict:
 SLOT_SEP = "||"
 
 
+GW_PREFIX = "gw:"   # должность шлюза; uid и должности Структуры так не начинаются
+
+
+def gw_slot(name: str) -> str:
+    """Выбор «должность шлюза»: подпись идёт от того, кого на неё
+    назначили, и меняется в одном месте для всех компаний сразу."""
+    return slot_value(f"{GW_PREFIX}{name}")
+
+
 def slot_value(ref: str = "", dept: str = "", person_id=None) -> str:
-    """Одно поле формы на выбор подписанта: либо должность из Структуры
-    (тогда подпись идёт от того, кто её занимает сейчас), либо человек
-    из справочника. Ссылка сильнее — с неё и начинаем."""
+    """Одно поле формы на выбор подписанта: должность шлюза, должность
+    или сотрудник из Структуры, либо человек из справочника. Ссылка
+    сильнее — с неё и начинаем."""
     if ref:
         return f"r:{ref}{SLOT_SEP}{dept or ''}"
     if person_id:
@@ -143,12 +152,64 @@ class SignerStore:
     # --- должности шлюза --------------------------------------------------
 
     def gateway_positions(self) -> list[str]:
-        """Каталог должностей шлюза. В подпись печатается именно он, а не
+        """Названия должностей шлюза. В подпись печатается именно оно, а не
         должность из Структуры: у Doc-V она одна на человека, а подписывать
         он может как директор разных компаний."""
         with connect(self.db_path) as conn:
             return [r["name"] for r in conn.execute(
                 "SELECT name FROM signer_positions ORDER BY name")]
+
+    def position_cards(self) -> list[dict]:
+        """Должности шлюза вместе с назначенным человеком и числом мест,
+        где на должность ссылаются подписи."""
+        staff = {p["uid"]: p for p in self.staff()}
+        with connect(self.db_path) as conn:
+            people = {r["id"]: r["fio"] for r in
+                      conn.execute("SELECT id, fio FROM signer_people")}
+            rows = conn.execute("SELECT * FROM signer_positions ORDER BY name").fetchall()
+            out = []
+            for row in rows:
+                ref = f"{GW_PREFIX}{row['name']}"
+                used = conn.execute(
+                    "SELECT (SELECT COUNT(*) FROM signer_bindings"
+                    "  WHERE soglasovano_ref = ? OR utverzhdayu_ref = ?)"
+                    " + (SELECT COUNT(*) FROM signer_sets WHERE position_ref = ?) AS n",
+                    (ref, ref, ref)).fetchone()["n"]
+                holder = staff.get(row["holder_uid"])
+                out.append({
+                    "name": row["name"],
+                    "value": slot_value(ref),
+                    "holder_uid": row["holder_uid"],
+                    "holder_person_id": row["holder_person_id"],
+                    "holder": (holder["fio"] if holder
+                               else people.get(row["holder_person_id"], "")),
+                    "holder_slot": slot_value(row["holder_uid"], "",
+                                              row["holder_person_id"]),
+                    "vacant": not holder and not people.get(row["holder_person_id"]),
+                    "used": used,
+                })
+        return out
+
+    def assign_position(self, name: str, *, holder_uid: str = "",
+                        holder_person_id=None) -> None:
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        with connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT INTO signer_positions (name, holder_uid, holder_person_id,"
+                " updated_at) VALUES (?,?,?,?) ON CONFLICT(name) DO UPDATE SET"
+                " holder_uid = excluded.holder_uid,"
+                " holder_person_id = excluded.holder_person_id,"
+                " updated_at = excluded.updated_at",
+                (name.strip(), holder_uid.strip(), holder_person_id or None, now))
+
+    def position_usage(self, name: str) -> int:
+        ref = f"{GW_PREFIX}{name}"
+        with connect(self.db_path) as conn:
+            return conn.execute(
+                "SELECT (SELECT COUNT(*) FROM signer_bindings"
+                "  WHERE soglasovano_ref = ? OR utverzhdayu_ref = ?)"
+                " + (SELECT COUNT(*) FROM signer_sets WHERE position_ref = ?) AS n",
+                (ref, ref, ref)).fetchone()["n"]
 
     def add_position(self, name: str) -> str:
         name = str(name or "").strip()
@@ -212,6 +273,8 @@ class SignerStore:
         if not ref:
             return None
         dept = str(dept or "").strip()
+        if ref.startswith(GW_PREFIX):
+            return self._gw_holder(staff, ref[len(GW_PREFIX):])
         by_uid = [p for p in staff if p["uid"] == ref]
         if by_uid:
             return by_uid[0]
@@ -226,6 +289,30 @@ class SignerStore:
                         extra={"data": {"position_ref": ref, "department": dept,
                                         "holders": [p["fio"] for p in found]}})
         return sorted(found, key=lambda p: p["fio"])[0]
+
+    def _gw_holder(self, staff: list[dict], name: str) -> dict | None:
+        """Кого назначили на должность шлюза. Должность и есть то, что
+        печатается, поэтому она же идёт в position."""
+        with connect(self.db_path) as conn:
+            row = conn.execute("SELECT * FROM signer_positions WHERE name = ?",
+                               (name,)).fetchone()
+            if row is None:
+                log.warning("должности шлюза нет в каталоге — подпись останется пустой",
+                            extra={"data": {"position": name}})
+                return None
+            fio = ""
+            if row["holder_uid"]:
+                found = [p for p in staff if p["uid"] == row["holder_uid"]]
+                fio = found[0]["fio"] if found else ""
+            if not fio and row["holder_person_id"]:
+                person = conn.execute("SELECT fio FROM signer_people WHERE id = ?",
+                                      (row["holder_person_id"],)).fetchone()
+                fio = person["fio"] if person else ""
+        if not fio:
+            log.warning("на должность шлюза никто не назначен — подпись останется пустой",
+                        extra={"data": {"position": name}})
+            return None
+        return {"uid": row["holder_uid"], "fio": fio, "position": name, "department": ""}
 
     # --- подбор ---------------------------------------------------------
 
@@ -357,6 +444,22 @@ class SignerStore:
                 return cur.lastrowid
             return conn.execute("SELECT id FROM signer_people WHERE fio_key = ?",
                                 (fio_key(fio),)).fetchone()["id"]
+
+    def people_usage(self) -> dict[int, int]:
+        """Сколько подписей держится на каждом человеке — чтобы в списке
+        было сразу видно, кого удалять нельзя."""
+        counts: dict[int, int] = {}
+        with connect(self.db_path) as conn:
+            for column in ("soglasovano_id", "utverzhdayu_id"):
+                for row in conn.execute(
+                        f"SELECT {column} AS id, COUNT(*) AS n FROM signer_bindings"
+                        f" WHERE {column} IS NOT NULL GROUP BY {column}"):
+                    counts[row["id"]] = counts.get(row["id"], 0) + row["n"]
+            for row in conn.execute(
+                    "SELECT person_id AS id, COUNT(*) AS n FROM signer_sets"
+                    " WHERE person_id IS NOT NULL GROUP BY person_id"):
+                counts[row["id"]] = counts.get(row["id"], 0) + row["n"]
+        return counts
 
     def person_usage(self, person_id: int) -> list[str]:
         """Где человек подписывает: удалять его вслепую нельзя, иначе
@@ -531,9 +634,19 @@ class SignerStore:
                     " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     (company, normalize_name(company), obj, normalize_object(obj),
                      set_name, *left, *right))
+            # Должность, которую в старом справочнике занимал ровно один
+            # человек, сразу получает его: каталог становится рабочим без
+            # ручного назначения. «Генеральный директор» у двух десятков
+            # компаний разный, поэтому остаётся вакантным.
+            holders: dict[str, set[int]] = {}
+            for number, (_fio, position, _company) in spr.items():
+                if position:
+                    holders.setdefault(position, set()).add(ids[number])
             conn.executemany(
-                "INSERT OR IGNORE INTO signer_positions (name, updated_at) VALUES (?,?)",
-                [(position, now) for _fio, position, _company in spr.values() if position])
+                "INSERT OR IGNORE INTO signer_positions (name, holder_person_id,"
+                " updated_at) VALUES (?,?,?)",
+                [(position, next(iter(people_ids)) if len(people_ids) == 1 else None, now)
+                 for position, people_ids in holders.items()])
             count = conn.execute(
                 "SELECT COUNT(*) c FROM signer_bindings").fetchone()["c"]
             people = conn.execute(

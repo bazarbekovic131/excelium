@@ -62,6 +62,8 @@ CREATE TABLE IF NOT EXISTS signer_people (
 );
 CREATE TABLE IF NOT EXISTS signer_positions (
   name TEXT PRIMARY KEY,
+  holder_uid TEXT NOT NULL DEFAULT '',
+  holder_person_id INTEGER REFERENCES signer_people(id),
   updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS signer_sets (
@@ -115,6 +117,8 @@ def connect(path: Path) -> sqlite3.Connection:
 # Колонки, добавленные после первого выпуска: база на сервере уже
 # создана, поэтому CREATE TABLE их не заведёт — дописываем на месте.
 _ADDED_COLUMNS = {
+    "signer_positions": [("holder_uid", "TEXT NOT NULL DEFAULT \'\'"),
+                         ("holder_person_id", "INTEGER")],
     "signer_sets": [("position_ref", "TEXT NOT NULL DEFAULT \'\'"),
                     ("dept_ref", "TEXT NOT NULL DEFAULT \'\'")],
     "signer_bindings": [("soglasovano_ref", "TEXT NOT NULL DEFAULT \'\'"),

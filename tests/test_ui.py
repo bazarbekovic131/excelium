@@ -462,3 +462,28 @@ def test_set_row_can_be_dropped(client):
     after = store.sets()[name]
     assert len(after) == len(before) - 1
     assert after[0]["person_id"] == before[1]["person_id"]
+
+
+def test_position_assign_and_delete_from_ui(client):
+    _login(client)
+    store = client.app.state.signers
+    client.post("/directory/structura", headers=docv_headers(), json={"items": [
+        {"uid": "u-500", "display_name": "Назначенный Н.Н.", "position": "Директор"}]})
+    client.post("/ui/signers/position", data={"name": "Первый подписант"},
+                follow_redirects=False)
+    r = client.post("/ui/signers/position/assign",
+                    data={"name": "Первый подписант", "slot": "r:u-500||"},
+                    follow_redirects=True)
+    assert "Назначение для «Первый подписант» сохранено" in r.text
+    card = next(c for c in store.position_cards() if c["name"] == "Первый подписант")
+    assert card["holder"] == "Назначенный Н.Н."
+    # должность видна в списке выбора подписанта
+    assert "Первый подписант → Назначенный Н.Н." in client.get(
+        "/ui/signers/binding/new").text.replace("\n", " ").replace("  ", " ")
+    # используемую должность удалить нельзя
+    store.save_binding(company="ТОО «Занято»", object_name="", set_name="list_1",
+                       soglasovano={"ref": "gw:Первый подписант", "position": "",
+                                    "company": "ТОО «Занято»"}, utverzhdayu=None)
+    r = client.post("/ui/signers/position", data={"delete": "Первый подписант"},
+                    follow_redirects=True)
+    assert "ссылаются 1 подписей" in r.text

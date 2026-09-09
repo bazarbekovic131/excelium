@@ -250,3 +250,53 @@ def test_staff_without_position_still_selectable(client):
     store = client.app.state.signers
     assert any(p["uid"] == "u-30" for p in store.staff())
     assert not any(p["position"] == "" for p in store.positions())
+
+
+def test_gateway_position_holds_a_person_and_signs(client):
+    """Должность шлюза — то, к чему привязываются подписи. Меняем того,
+    кто её занимает, в одном месте, и это доходит до всех реестров."""
+    from gateway.signers import gw_slot, parse_slot
+    store = client.app.state.signers
+    _structura(client, [
+        {"uid": "u-100", "display_name": "Первый Директор", "position": "Директор"},
+        {"uid": "u-101", "display_name": "Второй Директор", "position": "Директор"}])
+    store.add_position("Генеральный директор Шар-Құрылыс")
+    store.assign_position("Генеральный директор Шар-Құрылыс", holder_uid="u-100")
+
+    chosen = parse_slot(gw_slot("Генеральный директор Шар-Құрылыс"))
+    store.save_binding(company="ТОО «Должность»", object_name="", set_name="list_1",
+                       soglasovano=None,
+                       utverzhdayu={**chosen, "position": "", "company": "ТОО «Должность»"})
+    signer = store.resolve("ТОО «Должность»")["utverzhdayu"]
+    assert signer["fio"] == "Первый Директор"
+    # пустая должность в привязке — печатается название должности шлюза
+    assert signer["position"] == "Генеральный директор Шар-Құрылыс"
+
+    store.assign_position("Генеральный директор Шар-Құрылыс", holder_uid="u-101")
+    assert store.resolve("ТОО «Должность»")["utverzhdayu"]["fio"] == "Второй Директор"
+
+
+def test_gateway_position_counts_and_guards_deletion(client):
+    from gateway.signers import gw_slot, parse_slot
+    store = client.app.state.signers
+    store.add_position("Хранитель печати")
+    assert store.position_usage("Хранитель печати") == 0
+    person = store.people()[0]
+    store.assign_position("Хранитель печати", holder_person_id=person["id"])
+    store.save_binding(company="ТОО «Счётчик»", object_name="", set_name="list_1",
+                       soglasovano=parse_slot(gw_slot("Хранитель печати")),
+                       utverzhdayu=None)
+    assert store.position_usage("Хранитель печати") == 1
+    card = next(c for c in store.position_cards() if c["name"] == "Хранитель печати")
+    assert card["holder"] == person["fio"] and card["used"] == 1 and not card["vacant"]
+
+
+def test_vacant_gateway_position_signs_nobody(client):
+    from gateway.signers import gw_slot, parse_slot
+    store = client.app.state.signers
+    store.add_position("Ничей пост")
+    store.save_binding(company="ТОО «Ничей»", object_name="", set_name="list_1",
+                       soglasovano=None,
+                       utverzhdayu={**parse_slot(gw_slot("Ничей пост")),
+                                    "position": "", "company": "ТОО «Ничей»"})
+    assert store.resolve("ТОО «Ничей»")["utverzhdayu"] is None

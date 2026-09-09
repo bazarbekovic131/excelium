@@ -40,6 +40,13 @@
                    placeholder="поиск по списку">
             <select name="slot" id="slot-{{ loop.index }}">
               <option value="">— убрать строку —</option>
+              <optgroup label="Должность шлюза ({{ position_cards|length }})">
+                {% for pos in position_cards %}
+                <option value="{{ pos.value }}" {{ 'selected' if pos.value == row.slot }}>
+                  {{ pos.name }}{% if pos.holder %} → {{ pos.holder }}{% else %} → никто не назначен{% endif %}
+                </option>
+                {% endfor %}
+              </optgroup>
               <optgroup label="Сотрудник из Структуры ({{ staff|length }})">
                 {% for person in staff %}
                 <option value="{{ person.value }}" {{ 'selected' if person.value == row.slot }}>

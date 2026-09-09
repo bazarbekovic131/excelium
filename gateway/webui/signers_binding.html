@@ -49,6 +49,13 @@
           <span class="count" data-filter-count></span>
           <select name="{{ role }}_slot" id="slot-{{ role }}">
             <option value="">— не печатать —</option>
+            <optgroup label="Должность шлюза ({{ position_cards|length }}) — подпись от того, кого на неё назначили">
+              {% for pos in position_cards %}
+              <option value="{{ pos.value }}" {{ 'selected' if pos.value == slots[role] }}>
+                {{ pos.name }}{% if pos.holder %} → {{ pos.holder }}{% else %} → никто не назначен{% endif %}
+              </option>
+              {% endfor %}
+            </optgroup>
             <optgroup label="Сотрудник из Структуры ({{ staff|length }}) — подпись всегда от него">
               {% for person in staff %}
               <option value="{{ person.value }}" {{ 'selected' if person.value == slots[role] }}>
