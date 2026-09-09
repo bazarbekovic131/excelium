@@ -12,7 +12,7 @@ from .filestore.store import FileStore
 from .jobsqueue.db import init_db
 from .logging_setup import setup_logging
 from .config import APP_DIR, Settings
-from .renderers.approvers import ApproverMatrix
+from .renderers.approvers import ApproverMatrix, warn_if_stale
 from .apilog import ApiLog
 from .directory import DirectoryStore
 from .heartbeat import Heartbeat
@@ -40,7 +40,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         init_db(settings.db_path)
         app.state.settings = settings
         app.state.filestore = FileStore(settings)
-        app.state.approvers = ApproverMatrix(APP_DIR / "data" / "approvers.yaml")
+        approvers_yaml = APP_DIR / "data" / "approvers.yaml"
+        warn_if_stale(approvers_yaml, APP_DIR / "utils" / "firmen_und_objekte.py")
+        app.state.approvers = ApproverMatrix(approvers_yaml)
         app.state.banks = load_banks(APP_DIR / "data" / "banks.yaml")
         app.state.template_inner = APP_DIR / "templates" / "excel" / "template.xlsx"
         app.state.template_outer = APP_DIR / "templates" / "excel" / "template_outer.xlsx"

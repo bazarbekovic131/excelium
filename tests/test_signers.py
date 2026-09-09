@@ -1,6 +1,8 @@
 """Подписанты из payload Doc-V (режим снимка) в реестрах."""
 import io
 import json
+import logging
+import os
 from pathlib import Path
 
 import openpyxl
@@ -80,3 +82,23 @@ def test_priority_signers_override(client):
                       for c in row if c.value)
     assert "Финансовый директор" in joined and "Омарова Г.А." in joined
     assert "Сергачев П.А." in joined
+
+
+def test_warn_if_stale(tmp_path, caplog):
+    """Свежая матрица при старом справочнике — предупреждение на старте."""
+    from gateway.renderers.approvers import warn_if_stale
+
+    yaml_path = tmp_path / "approvers.yaml"
+    source = tmp_path / "firmen_und_objekte.py"
+    yaml_path.write_text("rules: []", encoding="utf-8")
+    source.write_text("# матрица", encoding="utf-8")
+    os.utime(yaml_path, (1_000, 1_000))
+    os.utime(source, (2_000, 2_000))
+    with caplog.at_level(logging.WARNING):
+        assert warn_if_stale(yaml_path, source) is True
+    assert "пересоберите" in caplog.text
+
+    os.utime(source, (500, 500))
+    assert warn_if_stale(yaml_path, source) is False
+    # нет боевой матрицы (обычная машина разработчика) — молчим
+    assert warn_if_stale(yaml_path, tmp_path / "нет.py") is False

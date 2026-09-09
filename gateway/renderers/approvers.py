@@ -34,6 +34,24 @@ def normalize_name(value) -> str:
     return re.sub(r"[\s\-]+", " ", text).strip().casefold()
 
 
+def warn_if_stale(yaml_path: Path, source_path: Path) -> bool:
+    """Матрицу правят в utils/firmen_und_objekte.py, а шлюз читает YAML.
+
+    Если исходник свежее собранного справочника, реестр уйдёт со старыми
+    подписантами и никто этого не заметит — поэтому предупреждаем на старте.
+    """
+    if not source_path.exists() or not yaml_path.exists():
+        return False
+    if source_path.stat().st_mtime <= yaml_path.stat().st_mtime:
+        return False
+    log.warning(
+        "матрица подписантов свежее справочника шлюза — пересоберите его: "
+        "python3 scripts/approvers_from_py.py > data/approvers.yaml",
+        extra={"data": {"source": str(source_path), "yaml": str(yaml_path)}},
+    )
+    return True
+
+
 class ApproverMatrix:
     def __init__(self, path: Path):
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
