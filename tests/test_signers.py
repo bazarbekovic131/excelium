@@ -83,8 +83,8 @@ def test_directory_link_refreshes_fio(client):
     client.post("/directory/structura", headers=docv_headers(), json={"items": [
         {"uid": "u-1", "display_name": "Аманов Бауыржан Шарипович",
          "position": "Генеральный директор", "department": "Дирекция"}]})
-    linked = store.link_directory(client.app.state.directory.all())
-    assert linked == 1
+    result = store.link_directory()
+    assert result["matched"] == 1 and result["renamed"] == 1
     after = store.resolve("ТОО «Шар-Кұрылыс»", "Администрация")["utverzhdayu"]
     assert after["fio"] == "Аманов Бауыржан Шарипович"
     # должность осталась той, под которой он подписывает эту компанию
@@ -135,3 +135,65 @@ def test_objects_with_brackets_stay_distinct(client):
         == "Прораб"
     other = store.resolve('ТОО "СМУ Аргон"', "Школа (Тельман)")
     assert other["utverzhdayu"] is None or other["utverzhdayu"]["position"] != "Прораб"
+
+
+def _structura(client, items):
+    r = client.post("/directory/structura", headers=docv_headers(), json={"items": items})
+    assert r.status_code == 200
+
+
+def test_signature_follows_whoever_holds_the_position(client):
+    """Главное: привязка указывает должность, а подпись идёт от того, кто
+    её занимает сейчас. Сменился сотрудник в Doc-V — сменилась подпись."""
+    store = client.app.state.signers
+    _structura(client, [{"uid": "u-10", "display_name": "Петров Пётр Петрович",
+                         "position": "Финансовый директор", "department": "Финансы"}])
+    store.save_binding(company="ТОО «Смена»", object_name="", set_name="list_1",
+                       soglasovano=None,
+                       utverzhdayu={"ref": "Финансовый директор", "dept": "Финансы",
+                                    "position": "Генеральный директор",
+                                    "company": "ТОО «Смена»"})
+    first = store.resolve("ТОО «Смена»")["utverzhdayu"]
+    assert first["fio"] == "Петров Пётр Петрович"
+    # печатается должность из привязки, а не из Структуры
+    assert first["position"] == "Генеральный директор"
+
+    _structura(client, [{"uid": "u-11", "display_name": "Сидорова Анна Ивановна",
+                         "position": "Финансовый директор", "department": "Финансы"}])
+    second = store.resolve("ТОО «Смена»")["utverzhdayu"]
+    assert second["fio"] == "Сидорова Анна Ивановна"
+    assert second["position"] == "Генеральный директор"
+
+
+def test_position_reference_can_use_uid(client):
+    """Ссылкой годится и шифр записи: Doc-V шлёт то название, то uid."""
+    store = client.app.state.signers
+    _structura(client, [{"uid": "uid-777", "display_name": "Ким Олег Сергеевич",
+                         "position": "Начальник ЮО", "department": "Юротдел"}])
+    store.save_binding(company="ТОО «Шифр»", object_name="", set_name="list_1",
+                       soglasovano={"ref": "uid-777", "position": "Начальник ЮО",
+                                    "company": "ТОО «Шифр»"},
+                       utverzhdayu=None)
+    assert store.resolve("ТОО «Шифр»")["soglasovano"]["fio"] == "Ким Олег Сергеевич"
+
+
+def test_vacant_position_leaves_signature_empty(client, caplog):
+    store = client.app.state.signers
+    _structura(client, [{"uid": "u-12", "display_name": "Кто-то", "position": "Кладовщик"}])
+    store.save_binding(company="ТОО «Пусто»", object_name="", set_name="list_1",
+                       soglasovano=None,
+                       utverzhdayu={"ref": "Такой должности нет", "position": "Директор",
+                                    "company": "ТОО «Пусто»"})
+    assert store.resolve("ТОО «Пусто»")["utverzhdayu"] is None
+
+
+def test_positions_list_shows_holders(client):
+    _structura(client, [
+        {"uid": "u-20", "display_name": "Первый И.И.", "position": "Прораб",
+         "department": "СМР"},
+        {"uid": "u-21", "display_name": "Второй П.П.", "position": "Прораб",
+         "department": "СМР"}])
+    positions = client.app.state.signers.positions()
+    prorab = next(p for p in positions if p["position"] == "Прораб")
+    assert prorab["department"] == "СМР"
+    assert prorab["holders"] == ["Второй П.П.", "Первый И.И."]

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from gateway.opsrunner.registry import load_registry
 
-from conftest import TOKEN_ADMIN
+from conftest import TOKEN_ADMIN, docv_headers
 
 MODEL = json.loads((Path(__file__).parent / "data" / "model.json").read_text(encoding="utf-8"))
 
@@ -216,7 +216,7 @@ def test_dashboard_shows_directories(client):
         {"uid": "u1", "display_name": "Абдрахманова Х.М.", "position": "Гл. бухгалтер",
          "department": "Бухгалтерия"}])
     r = client.get("/ui")
-    assert "structura" in r.text and ">1<" in r.text  # имя и число записей на карточке
+    assert "structura" in r.text and "1 записей" in r.text  # имя и счётчик
 
 
 def test_ops_builder_creates_and_reloads(client, tmp_path):
@@ -355,8 +355,8 @@ def test_signers_binding_edit_roundtrip(client):
     r = client.post("/ui/signers/binding/save", follow_redirects=False, data={
         "binding_id": "", "company": "ТОО «Новая»", "object_name": "",
         "set_name": sorted(store.sets())[0],
-        "soglasovano_id": "", "soglasovano_position": "", "soglasovano_company": "",
-        "utverzhdayu_id": str(person["id"]), "utverzhdayu_position": "Директор",
+        "soglasovano_slot": "", "soglasovano_position": "", "soglasovano_company": "",
+        "utverzhdayu_slot": f"p:{person['id']}", "utverzhdayu_position": "Директор",
         "utverzhdayu_company": "ТОО «Новая»"})
     assert r.status_code == 302
     resolved = store.resolve("ТОО «Новая»")
@@ -379,7 +379,7 @@ def test_signers_set_edit_changes_registry_signatures(client):
     assert page.status_code == 200
     person = store.people()[0]
     r = client.post(f"/ui/signers/set/{name}/save", follow_redirects=False, data={
-        "person_id": str(person["id"]), "position": "Проверяющий",
+        "slot": f"p:{person['id']}", "position": "Проверяющий",
         "print_company": "ТОО «Тест»", "mark": "", "skip_expense_types": ""})
     assert r.status_code == 302
     entries = store.sets()[name]
@@ -389,4 +389,17 @@ def test_signers_set_edit_changes_registry_signatures(client):
 def test_signers_link_without_directory_says_so(client):
     _login(client)
     r = client.post("/ui/signers/link", follow_redirects=True)
-    assert r.status_code == 200 and "Выгрузите Структуру" in r.text
+    assert r.status_code == 200 and "Выгрузите её" in r.text
+
+
+def test_signers_link_reports_what_it_found(client):
+    _login(client)
+    client.post("/directory/structura", headers=docv_headers(), json={"items": [
+        {"uid": "u-1", "display_name": "Аманов Бауыржан Шарипович",
+         "position": "Генеральный директор", "department": "Дирекция"},
+        {"uid": "u-2", "display_name": "Иванов Иван Иванович",
+         "position": "Кладовщик", "department": "Склад"}]})
+    r = client.post("/ui/signers/link", follow_redirects=True)
+    assert "Структура: 2 сотрудников" in r.text
+    assert "Узнали 1" in r.text and "переименовано 1" in r.text
+    assert "Не нашли в Doc-V" in r.text

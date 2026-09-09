@@ -66,7 +66,7 @@
       {% for b in beats %}
       <div class="feed-row">
         <span class="name">{{ b.label }}</span>
-        <span class="mono muted">{{ b.clock }}</span>
+        <span class="hint" style="white-space:nowrap">{{ b.clock }}</span>
         <span class="status-item" style="color:var({{ '--brand-ink' if b.dot == '' else '--amber-800' }})">
           <span class="dot {{ b.dot }}"></span>{{ b.text }}</span>
       </div>
@@ -81,9 +81,12 @@
       </div>
       {% for d in directories %}
       <div class="feed-row">
-        <span class="name mono">{{ d.name }}</span>
-        <span class="chip neutral">{{ d.count }}</span>
-        <span class="mono muted">{{ d.updated_at|dt }}</span>
+        <span class="name">
+          {{ d.name }}
+          {% if d.columns %}<span class="hint" style="display:block;margin-top:3px">{{ d.columns }}</span>{% endif %}
+        </span>
+        <span class="chip neutral">{{ d.count }} записей</span>
+        <span class="hint" style="white-space:nowrap">{{ d.updated_at|dt }}</span>
       </div>
       {% else %}
       <div class="empty">Пока не приходили. Прогоните отправку из «Шлюза».</div>

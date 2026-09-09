@@ -24,6 +24,7 @@ from ..renderers.registry_priority import render_priority
 from ..renderers.typst_renderer import (TypstError, render_typst, typst_available,
                                         typst_binary)
 from ..security import ADMIN_COOKIE, _match
+from ..signers import parse_slot, slot_value
 from .render import _deliver, _sorted
 
 log = logging.getLogger(__name__)
@@ -906,14 +907,19 @@ def signers_page(request: Request, search: str = "", flash: str = "", flash_err:
 
 @router.post("/ui/signers/link")
 def signers_link(request: Request):
-    linked = request.app.state.signers.link_directory(request.app.state.directory.all())
-    audit_log("signers_linked", count=linked)
-    if not linked:
+    result = request.app.state.signers.link_directory()
+    audit_log("signers_linked", **result)
+    if not result["staff"]:
         return RedirectResponse(
-            "/ui/signers?flash=Сверять не с чем. Выгрузите Структуру из Doc-V:"
-            " действие «HTTP-запрос» POST /directory/structura&flash_err=1", status_code=302)
-    return RedirectResponse(f"/ui/signers?flash=ФИО обновлены у {linked} человек",
-                            status_code=302)
+            "/ui/signers?flash=В Структуре нет записей с должностью. Выгрузите её"
+            " из Doc-V: действие «HTTP-запрос» POST /directory/structura&flash_err=1",
+            status_code=302)
+    flash = (f"Структура: {result['staff']} сотрудников. Узнали "
+             f"{result['matched']}, из них переименовано {result['renamed']}.")
+    if result["unmatched"]:
+        flash += (f" Не нашли в Doc-V: {result['unmatched']} — им подпись идёт"
+                  " по записи справочника.")
+    return RedirectResponse(f"/ui/signers?flash={flash}", status_code=302)
 
 
 @router.post("/ui/signers/person")
@@ -933,6 +939,13 @@ EMPTY_BINDING = {"id": None, "company": "", "object_name": "", "set_name": "",
                  "utverzhdayu_position": "", "utverzhdayu_company": ""}
 
 
+def _position_options(store) -> list[dict]:
+    """Должности из Структуры для выпадающих списков — с теми, кто их
+    сейчас занимает: по одному шифру должности человека не узнать."""
+    return [{**pos, "value": slot_value(pos["position"], pos["department"])}
+            for pos in store.positions()]
+
+
 @router.get("/ui/signers/binding/{binding_id}")
 def signers_binding(request: Request, binding_id: str, flash: str = ""):
     store = request.app.state.signers
@@ -946,8 +959,12 @@ def signers_binding(request: Request, binding_id: str, flash: str = ""):
         binding = found
         preview = json.dumps(store.resolve(found["company"], found["object_name"]),
                              ensure_ascii=False, indent=1)
+    slots = {role: slot_value(binding[f"{role}_ref"], binding[f"{role}_dept"],
+                              binding[f"{role}_id"])
+             for role in ("soglasovano", "utverzhdayu")}
     return _page(request, "signers_binding.html", "signers", binding=binding,
                  people=store.people(), set_names=sorted(store.sets()),
+                 positions=_position_options(store), slots=slots,
                  preview=preview, flash=flash, flash_err=False)
 
 
@@ -956,10 +973,10 @@ async def signers_binding_save(request: Request):
     form = await request.form()
 
     def role(name: str) -> dict | None:
-        raw = str(form.get(f"{name}_id") or "").strip()
-        if not raw:
+        slot = parse_slot(form.get(f"{name}_slot"))
+        if not slot["person_id"] and not slot["ref"]:
             return None
-        return {"person_id": int(raw), "position": str(form.get(f"{name}_position") or ""),
+        return {**slot, "position": str(form.get(f"{name}_position") or ""),
                 "company": str(form.get(f"{name}_company") or "")}
 
     raw_id = str(form.get("binding_id") or "").strip()
@@ -986,13 +1003,16 @@ def signers_binding_delete(request: Request, binding_id: int):
 @router.get("/ui/signers/set/{name}")
 def signers_set(request: Request, name: str, add: int = 0, flash: str = ""):
     store = request.app.state.signers
-    rows = [dict(r) for r in store.sets().get(name, [])]
-    rows += [{"person_id": None, "position": "", "print_company": "", "mark": "",
-              "skip_expense_types": "", "default_position": ""}
+    rows = [{**dict(r), "slot": slot_value(r["position_ref"], r["dept_ref"],
+                                           r["person_id"])}
+            for r in store.sets().get(name, [])]
+    rows += [{"person_id": None, "slot": "", "position": "", "print_company": "",
+              "mark": "", "skip_expense_types": "", "default_position": ""}
              for _ in range(max(add, 1))]
     used = sum(1 for b in store.bindings() if b["set_name"] == name)
     return _page(request, "signers_set.html", "signers", name=name, rows=rows,
-                 people=store.people(), used=used, flash=flash, flash_err=False)
+                 people=store.people(), positions=_position_options(store),
+                 used=used, flash=flash, flash_err=False)
 
 
 @router.post("/ui/signers/set/{name}/save")
@@ -1000,14 +1020,18 @@ async def signers_set_save(request: Request, name: str):
     form = await request.form()
     if form.get("add"):
         return RedirectResponse(f"/ui/signers/set/{name}?add=2", status_code=302)
-    ids = form.getlist("person_id")
+    slots = form.getlist("slot")
     positions = form.getlist("position")
     companies = form.getlist("print_company")
     marks = form.getlist("mark")
     skips = form.getlist("skip_expense_types")
-    entries = [{"person_id": int(pid), "position": positions[i], "company": companies[i],
-                "mark": marks[i], "skip_expense_types": skips[i]}
-               for i, pid in enumerate(ids) if str(pid).strip()]
+    entries = []
+    for i, raw in enumerate(slots):
+        slot = parse_slot(raw)
+        if not slot["person_id"] and not slot["ref"]:
+            continue
+        entries.append({**slot, "position": positions[i], "company": companies[i],
+                        "mark": marks[i], "skip_expense_types": skips[i]})
     try:
         request.app.state.signers.save_set(name, entries)
     except ValueError as exc:

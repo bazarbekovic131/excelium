@@ -43,17 +43,28 @@
       <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--line)">
         <label>{{ title }}</label>
         <div class="grid-third">
-          <select name="{{ role }}_id">
+          <select name="{{ role }}_slot">
             <option value="">— не печатать —</option>
-            {% for p in people %}
-            <option value="{{ p.id }}" {{ 'selected' if binding[role ~ '_id'] == p.id }}>{{ p.fio }}</option>
-            {% endfor %}
+            <optgroup label="Должность в Структуре — подставит того, кто её занимает сейчас">
+              {% for pos in positions %}
+              <option value="{{ pos.value }}" {{ 'selected' if pos.value == slots[role] }}>
+                {{ pos.position }}{% if pos.department %} · {{ pos.department }}{% endif %}{% if pos.holders %} → {{ pos.holders|join(', ') }}{% endif %}
+              </option>
+              {% endfor %}
+            </optgroup>
+            <optgroup label="Конкретный человек — подпись не будет меняться">
+              {% for p in people %}
+              <option value="p:{{ p.id }}" {{ 'selected' if 'p:' ~ p.id == slots[role] }}>{{ p.fio }}</option>
+              {% endfor %}
+            </optgroup>
           </select>
           <input type="text" name="{{ role }}_position" placeholder="должность в подписи"
                  value="{{ binding[role ~ '_position'] }}">
           <input type="text" name="{{ role }}_company" placeholder="компания в подписи"
                  value="{{ binding[role ~ '_company'] }}">
         </div>
+        <div class="hint" style="margin-top:6px">Должность и компания печатаются из этих
+          двух полей; из Структуры берутся только ФИО и текущий сотрудник.</div>
       </div>
       {% endfor %}
 

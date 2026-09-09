@@ -16,13 +16,13 @@
 <div class="card">
   <div class="card-head">
     <span class="card-title">Состав</span>
-    <span class="card-note">пустой человек — строка удаляется · «пропустить при затратах» через запятую</span>
+    <span class="card-note">строка без подписанта удаляется · «пропустить при затратах» через запятую</span>
   </div>
   <div class="card-body">
     <form method="post" action="/ui/signers/set/{{ name }}/save">
       <table>
         <thead><tr>
-          <th style="width:34px">№</th><th>Человек</th><th>Должность в подписи</th>
+          <th style="width:34px">№</th><th style="width:270px">Кто подписывает</th><th>Должность в подписи</th>
           <th>Компания в подписи</th><th style="width:130px">Заголовок над подписью</th>
           <th style="width:200px">Пропустить при затратах</th>
         </tr></thead>
@@ -31,11 +31,20 @@
         <tr>
           <td class="muted">{{ loop.index }}</td>
           <td>
-            <select name="person_id">
-              <option value="">— убрать —</option>
-              {% for p in people %}
-              <option value="{{ p.id }}" {{ 'selected' if p.id == row.person_id }}>{{ p.fio }}</option>
-              {% endfor %}
+            <select name="slot">
+              <option value="">— убрать строку —</option>
+              <optgroup label="Должность в Структуре">
+                {% for pos in positions %}
+                <option value="{{ pos.value }}" {{ 'selected' if pos.value == row.slot }}>
+                  {{ pos.position }}{% if pos.department %} · {{ pos.department }}{% endif %}{% if pos.holders %} → {{ pos.holders|join(', ') }}{% endif %}
+                </option>
+                {% endfor %}
+              </optgroup>
+              <optgroup label="Конкретный человек">
+                {% for p in people %}
+                <option value="p:{{ p.id }}" {{ 'selected' if 'p:' ~ p.id == row.slot }}>{{ p.fio }}</option>
+                {% endfor %}
+              </optgroup>
             </select>
           </td>
           <td><input type="text" name="position" value="{{ row.position }}"

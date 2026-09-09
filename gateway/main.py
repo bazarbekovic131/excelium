@@ -61,7 +61,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if app.state.signers.is_empty():
             app.state.signers.seed(APP_DIR / "data" / "signers_seed.yaml",
                                    app.state.template_inner)
-        app.state.signers.link_directory(app.state.directory.all())
+        app.state.signers.link_directory()
         app.state.typst_store = TypstStore(settings.db_path)
         # list_soglasovaniya переименован в contract_card: переносим вместе
         # с правками администратора, чтобы они не потерялись
