@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Набор {{ name }} — Doc-V Gateway{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Набор {{ name }}</h1>
+    <span class="sub">подписи под таблицей реестра, сверху вниз · используют {{ used }} привязок</span>
+  </div>
+  <div class="head-actions">
+    <a class="btn ghost" href="/ui/signers">← К списку</a>
+  </div>
+</div>
+
+{% if flash %}<div class="flash {{ 'err' if flash_err }}">{{ flash }}</div>{% endif %}
+
+<div class="card">
+  <div class="card-head">
+    <span class="card-title">Состав</span>
+    <span class="card-note">пустой человек — строка удаляется · «пропустить при затратах» через запятую</span>
+  </div>
+  <div class="card-body">
+    <form method="post" action="/ui/signers/set/{{ name }}/save">
+      <table>
+        <thead><tr>
+          <th style="width:34px">№</th><th>Человек</th><th>Должность в подписи</th>
+          <th>Компания в подписи</th><th style="width:130px">Заголовок над подписью</th>
+          <th style="width:200px">Пропустить при затратах</th>
+        </tr></thead>
+        <tbody>
+        {% for row in rows %}
+        <tr>
+          <td class="muted">{{ loop.index }}</td>
+          <td>
+            <select name="person_id">
+              <option value="">— убрать —</option>
+              {% for p in people %}
+              <option value="{{ p.id }}" {{ 'selected' if p.id == row.person_id }}>{{ p.fio }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td><input type="text" name="position" value="{{ row.position }}"
+                     placeholder="{{ row.default_position }}"></td>
+          <td><input type="text" name="print_company" value="{{ row.print_company }}"></td>
+          <td><input type="text" name="mark" value="{{ row.mark }}"></td>
+          <td><input type="text" name="skip_expense_types" value="{{ row.skip_expense_types }}"></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn" data-busy="Сохраняем…">Сохранить</button>
+        <button class="btn ghost" name="add" value="1">＋ Ещё строка</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

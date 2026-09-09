@@ -12,7 +12,6 @@ from .filestore.store import FileStore
 from .jobsqueue.db import init_db
 from .logging_setup import setup_logging
 from .config import APP_DIR, Settings
-from .renderers.approvers import ApproverMatrix, warn_if_stale
 from .apilog import ApiLog
 from .directory import DirectoryStore
 from .heartbeat import Heartbeat
@@ -22,8 +21,9 @@ from .renderers.typst_renderer import configure as configure_typst
 from .renderers.typst_renderer import typst_available, typst_binary
 from .opsrunner.registry import load_registry
 from .settings_store import SettingsStore
+from .signers import SignerStore
 from .jobsqueue.service import JobQueue
-from .routers import debug, directory, files, jobs, ops, render, ui
+from .routers import debug, directory, files, jobs, ops, render, signers, ui
 from .security import SecurityMiddleware
 
 log = logging.getLogger(__name__)
@@ -40,9 +40,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         init_db(settings.db_path)
         app.state.settings = settings
         app.state.filestore = FileStore(settings)
-        approvers_yaml = APP_DIR / "data" / "approvers.yaml"
-        warn_if_stale(approvers_yaml, APP_DIR / "utils" / "firmen_und_objekte.py")
-        app.state.approvers = ApproverMatrix(approvers_yaml)
+        app.state.signers = SignerStore(settings.db_path)
         app.state.banks = load_banks(APP_DIR / "data" / "banks.yaml")
         app.state.template_inner = APP_DIR / "templates" / "excel" / "template.xlsx"
         app.state.template_outer = APP_DIR / "templates" / "excel" / "template_outer.xlsx"
@@ -56,6 +54,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                   keep_days=settings.jobs_keep_days)
         app.state.heartbeat = Heartbeat(settings.db_path)
         app.state.directory = DirectoryStore(settings.db_path)
+        # Разовый перенос состава подписантов из прежних источников:
+        # структура — из data/signers_seed.yaml, ФИО и должности — со
+        # скрытого листа шаблона. Дальше состав живёт в базе и правится
+        # в /ui, а листы СПР в выдачу больше не попадают.
+        if app.state.signers.is_empty():
+            app.state.signers.seed(APP_DIR / "data" / "signers_seed.yaml",
+                                   app.state.template_inner)
+        app.state.signers.link_directory(app.state.directory.all())
         app.state.typst_store = TypstStore(settings.db_path)
         # list_soglasovaniya переименован в contract_card: переносим вместе
         # с правками администратора, чтобы они не потерялись
@@ -99,6 +105,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(ui.router)
     app.include_router(debug.router)
     app.include_router(directory.router)
+    app.include_router(signers.router)
 
     @app.get("/", include_in_schema=False)
     def root():

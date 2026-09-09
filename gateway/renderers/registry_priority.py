@@ -1,7 +1,9 @@
 """Реестр предстоящих оплат (по приоритету): лист на объект.
 
 Порт models/priority_registry.py; прямые обращения по ключам заменены
-на .get() с пустыми значениями, дубли импортов убраны.
+на .get() с пустыми значениями, дубли импортов убраны. Подписи под
+таблицей раньше были вписаны в код двумя фамилиями — теперь берутся из
+справочника подписантов шлюза, как и во внутреннем реестре.
 """
 from collections import defaultdict
 from datetime import datetime
@@ -15,10 +17,17 @@ DATA_COLS = ["A", "B", "C", "D", "E", "F", "G"]
 START_ROW = 7
 
 
-def render_priority(entries: list[dict], template_path):
+def render_priority(entries: list[dict], template_path, signers=None):
     workbook = openpyxl.load_workbook(template_path)
     template_sheet = workbook["REESTR"]
     font = Font(name="Arial", size=12)
+
+    # Подписи под таблицей — из справочника шлюза по компании реестра;
+    # объект у каждого листа свой, поэтому подбор идёт по первой записи.
+    first = entries[0] if entries else {}
+    resolved = signers.resolve(first.get("organization", ""),
+                               first.get("object_name", "")) if signers else {}
+    coordinators = resolved.get("coordinators") or []
 
     groups: dict[str, list[dict]] = defaultdict(list)
     for entry in entries:
@@ -49,12 +58,6 @@ def render_priority(entries: list[dict], template_path):
         sheet[f"E{total_row}"] = total
         styled = [f"D{total_row}", f"E{total_row}"]
 
-        # Подписи: из payload Doc-V ("signers".coordinators), иначе прежние
-        signers = entries[0].get("signers") if entries else None
-        coordinators = (signers or {}).get("coordinators") or [
-            {"position": "Начальник ПТО", "fio": "Королькова Е. В."},
-            {"position": "Исполнительный директор", "fio": "Сергачев П.А."},
-        ]
         for i, person in enumerate(coordinators):
             row = total_row + 2 + i * 2
             sheet[f"B{row}"] = str(person.get("position") or "")

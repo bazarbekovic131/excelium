@@ -336,3 +336,57 @@ def test_files_search_and_paging(client):
 
     found = client.get("/ui/files?search=реестр").text
     assert "реестр.txt" in found and "Показать ещё" not in found
+
+
+def test_signers_page_lists_bindings(client):
+    _login(client)
+    r = client.get("/ui/signers")
+    assert r.status_code == 200
+    assert "Подписанты" in r.text and "Шар" in r.text
+    # поиск сужает список
+    narrow = client.get("/ui/signers", params={"search": "СМУ Аргон"})
+    assert narrow.status_code == 200 and "СМУ Аргон" in narrow.text
+
+
+def test_signers_binding_edit_roundtrip(client):
+    _login(client)
+    store = client.app.state.signers
+    person = store.people()[0]
+    r = client.post("/ui/signers/binding/save", follow_redirects=False, data={
+        "binding_id": "", "company": "ТОО «Новая»", "object_name": "",
+        "set_name": sorted(store.sets())[0],
+        "soglasovano_id": "", "soglasovano_position": "", "soglasovano_company": "",
+        "utverzhdayu_id": str(person["id"]), "utverzhdayu_position": "Директор",
+        "utverzhdayu_company": "ТОО «Новая»"})
+    assert r.status_code == 302
+    resolved = store.resolve("ТОО «Новая»")
+    assert resolved["utverzhdayu"]["position"] == "Директор"
+    assert resolved["coordinators"]
+
+    binding = next(b for b in store.bindings() if b["company"] == "ТОО «Новая»")
+    page = client.get(f"/ui/signers/binding/{binding['id']}")
+    assert page.status_code == 200 and "Директор" in page.text
+
+    client.post(f"/ui/signers/binding/delete/{binding['id']}", follow_redirects=False)
+    assert store.resolve("ТОО «Новая»")["utverzhdayu"] is None
+
+
+def test_signers_set_edit_changes_registry_signatures(client):
+    _login(client)
+    store = client.app.state.signers
+    name = sorted(store.sets())[0]
+    page = client.get(f"/ui/signers/set/{name}")
+    assert page.status_code == 200
+    person = store.people()[0]
+    r = client.post(f"/ui/signers/set/{name}/save", follow_redirects=False, data={
+        "person_id": str(person["id"]), "position": "Проверяющий",
+        "print_company": "ТОО «Тест»", "mark": "", "skip_expense_types": ""})
+    assert r.status_code == 302
+    entries = store.sets()[name]
+    assert len(entries) == 1 and entries[0]["position"] == "Проверяющий"
+
+
+def test_signers_link_without_directory_says_so(client):
+    _login(client)
+    r = client.post("/ui/signers/link", follow_redirects=True)
+    assert r.status_code == 200 and "Выгрузите Структуру" in r.text

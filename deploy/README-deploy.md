@@ -41,17 +41,15 @@ sudo systemctl restart docv-gateway
 ```
 sudo systemctl disable --now excelium.service
 cd ~/Documents/api_excel
-cp utils/firmen_und_objekte.py ~/firmen_backup.py     # матрица нужна дальше
 diff <(md5sum excel_templates/*.xlsx | awk '{print $1}') \
      <(md5sum templates/excel/*.xlsx | awk '{print $1}')   # пусто = копии совпали
 git pull
-python3 scripts/approvers_from_py.py > data/approvers.yaml
 sudo systemctl restart docv-gateway
 curl -s localhost:25353/health
 ```
 
 Что уходит: `app.py`, `config.py`, `core/`, `models/`, `routes/`,
-`utils/*.py` кроме матрицы, `excelium.service`, `scripts/parity_check.py`
+`utils/*.py`, `excelium.service`, `scripts/parity_check.py`
 (сверял старый рендер с новым, сверять больше не с чем). Код остаётся в
 истории репозитория.
 
@@ -79,24 +77,20 @@ curl -s localhost:25353/health
 
 ## Данные, которых нет в git
 
-`utils/firmen_und_objekte.py` (матрица подписантов) — персональные
-данные: их правят на сервере, поэтому в репозитории их нет и быть не
-должно. При развёртывании на новой машине файл переносят руками.
+Состав подписантов — персональные данные, поэтому живёт в базе
+(`var/gateway.db`) и правится в /ui → «Подписанты». В git лежит только
+первичное наполнение `data/signers_seed.yaml`, которое читается один раз
+при первом запуске с пустой базой. При переезде на новую машину
+переносят `var/`, иначе состав вернётся к первичному.
 
 Шаблоны Excel, наоборот, лежат в git — `templates/excel/`. Каталог
 `excel_templates/` рядом остался от отключённого сервиса excelium; шлюз
 его не читает. Правка шаблона теперь идёт через репозиторий: изменили,
 закоммитили, `git pull` на сервере.
 
-Справочник шлюза `data/approvers.yaml` собирается из матрицы на месте:
-
-```
-python3 scripts/approvers_from_py.py > data/approvers.yaml
-sudo systemctl restart docv-gateway
-```
-
-Делайте это после каждой правки матрицы, иначе шлюз будет печатать
-прежних подписантов.
+Файл `utils/firmen_und_objekte.py` от старого сервиса больше никем не
+читается — его можно удалить с сервера. В .gitignore он оставлен
+намеренно: пока файл лежит на месте, запись в git ему закрыта.
 
 ## Секреты
 
@@ -110,9 +104,9 @@ HMAC от данных документа, проверяется повторн
 
 ## Веб-интерфейс
 
-Девять экранов по дизайн-системе ERP SHARK: рабочий стол, очередь
-заданий, операции с конструктором, файлы, шаблоны Typst, рендер,
-API-консоль, настройки, вход.
+Десять экранов по дизайн-системе ERP SHARK: рабочий стол, очередь
+заданий, операции с конструктором, файлы, подписанты, шаблоны Typst,
+рендер, API-консоль, настройки, вход.
 
 `http://192.168.30.19:25353/ui` — обзор (статусы, audit-лента), очередь
 заданий, ручной запуск операций, хранилище файлов, тестовый рендер

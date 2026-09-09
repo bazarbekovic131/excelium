@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Привязка подписантов — Doc-V Gateway{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ binding.company or "Новая привязка" }}</h1>
+    <span class="sub">{{ binding.object_name or "правило на всю компанию" }}</span>
+  </div>
+  <div class="head-actions">
+    <a class="btn ghost" href="/ui/signers">← К списку</a>
+  </div>
+</div>
+
+{% if flash %}<div class="flash {{ 'err' if flash_err }}">{{ flash }}</div>{% endif %}
+
+<div class="card">
+  <div class="card-head">
+    <span class="card-title">Кто подписывает</span>
+    <span class="card-note">должность и компания печатаются из этой формы, а не из карточки человека</span>
+  </div>
+  <div class="card-body">
+    <form method="post" action="/ui/signers/binding/save">
+      <input type="hidden" name="binding_id" value="{{ binding.id or '' }}">
+      <div class="grid-half">
+        <div>
+          <label>Компания <span class="hint">как приходит из Doc-V</span></label>
+          <input type="text" name="company" value="{{ binding.company }}" required>
+        </div>
+        <div>
+          <label>Объект <span class="hint">пусто — правило на всю компанию</span></label>
+          <input type="text" name="object_name" value="{{ binding.object_name }}">
+        </div>
+      </div>
+
+      <label>Набор согласующих</label>
+      <select name="set_name">
+        {% for name in set_names %}
+        <option value="{{ name }}" {{ 'selected' if name == binding.set_name }}>{{ name }}</option>
+        {% endfor %}
+      </select>
+
+      {% for role, title in (('soglasovano', 'СОГЛАСОВАНО — слева сверху'), ('utverzhdayu', 'УТВЕРЖДАЮ — справа сверху')) %}
+      <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--line)">
+        <label>{{ title }}</label>
+        <div class="grid-third">
+          <select name="{{ role }}_id">
+            <option value="">— не печатать —</option>
+            {% for p in people %}
+            <option value="{{ p.id }}" {{ 'selected' if binding[role ~ '_id'] == p.id }}>{{ p.fio }}</option>
+            {% endfor %}
+          </select>
+          <input type="text" name="{{ role }}_position" placeholder="должность в подписи"
+                 value="{{ binding[role ~ '_position'] }}">
+          <input type="text" name="{{ role }}_company" placeholder="компания в подписи"
+                 value="{{ binding[role ~ '_company'] }}">
+        </div>
+      </div>
+      {% endfor %}
+
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button class="btn" data-busy="Сохраняем…">Сохранить</button>
+      </div>
+    </form>
+    {% if binding.id %}
+    <form method="post" action="/ui/signers/binding/delete/{{ binding.id }}"
+          style="margin-top:10px"
+          onsubmit="return confirm('Удалить привязку? Реестры этой компании выйдут без подписей.')">
+      <button class="btn ghost">Удалить привязку</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{% if preview %}
+<div class="card">
+  <div class="card-head"><span class="card-title">Как это ляжет в реестр</span></div>
+  <div class="card-body">
+    <pre class="out">{{ preview }}</pre>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

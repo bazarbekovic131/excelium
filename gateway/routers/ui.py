@@ -428,11 +428,12 @@ def render_registry(request: Request, kind: str = Form(...), data: str = Form(..
             workbook = render_outer(entries, state.template_outer, state.banks)
             name = f"vneshny_reestr_ot_{date.today()}.xlsx"
         elif kind == "priority":
-            workbook = render_priority(_sorted(entries), state.template_priority)
+            workbook = render_priority(_sorted(entries), state.template_priority,
+                                       state.signers)
             name = f"reestr_prioritetov_ot_{date.today()}.xlsx"
         else:
             workbook = render_inner(_sorted(entries), state.template_inner,
-                                    state.approvers)
+                                    state.signers)
             name = f"reestr_ot_{date.today()}.xlsx"
     except Exception as exc:
         log.exception("ui render failed")
@@ -758,16 +759,18 @@ API_ENDPOINTS = [
                  ("POST", "/jobs", '{"type": "тест", "payload": {}}'),
                  ("POST", "/jobs/ack", '{"ids": [1]}')]),
     ("Рендер", [("POST", "/render/registry/inner", '{"request": []}'),
-                ("POST", "/render/typst/list_soglasovaniya", "{}")]),
+                ("POST", "/render/typst/contract_card", "{}")]),
     ("Операции и файлы", [("GET", "/ops", ""),
                           ("POST", "/ops/translit", '{"params": {"text": "Тест"}}'),
                           ("GET", "/health", "")]),
     ("Справочники", [("POST", "/directory/structura",
                       '[{"uid": "u1", "display_name": "Тест Т.Т."}]'),
-                     ("GET", "/directory", "")]),
+                     ("GET", "/directory", ""),
+                     ("GET", "/signers?company=ТОО «Шар-Кұрылыс»", "")]),
     ("Отладка", [("POST", "/debug/echo", '{"пример": true}')]),
 ]
-API_PREFIXES = ("/jobs", "/render", "/ops", "/directory", "/health", "/debug", "/files")
+API_PREFIXES = ("/jobs", "/render", "/ops", "/directory", "/signers", "/health",
+                "/debug", "/files")
 
 
 @router.get("/ui/api")
@@ -865,3 +868,149 @@ async def settings_save(request: Request):
     audit_log("settings_saved", values=applied)
     return RedirectResponse("/ui/settings?flash=Настройки применены на лету",
                             status_code=302)
+
+
+# --- подписанты -----------------------------------------------------------
+
+def _binding_rows(store, search: str = "") -> list[dict]:
+    """Привязки с уже подставленными ФИО — таблица должна читаться
+    глазами, а не показывать идентификаторы."""
+    people = {p["id"]: p for p in store.people()}
+
+    def person(row, role):
+        found = people.get(row[f"{role}_id"])
+        if not found:
+            return None
+        return {"fio": found["fio"],
+                "position": row[f"{role}_position"] or found["position"],
+                "company": row[f"{role}_company"] or row["company"]}
+
+    needle = search.strip().casefold()
+    rows = []
+    for row in store.bindings():
+        if needle and needle not in f"{row['company']} {row['object_name']}".casefold():
+            continue
+        rows.append({**row, "left": person(row, "soglasovano"),
+                     "right": person(row, "utverzhdayu")})
+    return rows
+
+
+@router.get("/ui/signers")
+def signers_page(request: Request, search: str = "", flash: str = "", flash_err: str = ""):
+    store = request.app.state.signers
+    return _page(request, "signers.html", "signers", search=search,
+                 bindings=_binding_rows(store, search), sets=store.sets(),
+                 people=store.people(), stats=store.stats(),
+                 flash=flash, flash_err=bool(flash_err))
+
+
+@router.post("/ui/signers/link")
+def signers_link(request: Request):
+    linked = request.app.state.signers.link_directory(request.app.state.directory.all())
+    audit_log("signers_linked", count=linked)
+    if not linked:
+        return RedirectResponse(
+            "/ui/signers?flash=Сверять не с чем. Выгрузите Структуру из Doc-V:"
+            " действие «HTTP-запрос» POST /directory/structura&flash_err=1", status_code=302)
+    return RedirectResponse(f"/ui/signers?flash=ФИО обновлены у {linked} человек",
+                            status_code=302)
+
+
+@router.post("/ui/signers/person")
+def signers_person(request: Request, fio: str = Form(...), position: str = Form(default=""),
+                   person_id: str = Form(default="")):
+    try:
+        request.app.state.signers.save_person(int(person_id) if person_id else None,
+                                              fio, position)
+    except ValueError as exc:
+        return RedirectResponse(f"/ui/signers?flash={exc}&flash_err=1", status_code=302)
+    return RedirectResponse("/ui/signers?flash=Сохранено", status_code=302)
+
+
+EMPTY_BINDING = {"id": None, "company": "", "object_name": "", "set_name": "",
+                 "soglasovano_id": None, "soglasovano_position": "",
+                 "soglasovano_company": "", "utverzhdayu_id": None,
+                 "utverzhdayu_position": "", "utverzhdayu_company": ""}
+
+
+@router.get("/ui/signers/binding/{binding_id}")
+def signers_binding(request: Request, binding_id: str, flash: str = ""):
+    store = request.app.state.signers
+    binding = dict(EMPTY_BINDING)
+    preview = ""
+    if binding_id != "new":
+        found = next((b for b in store.bindings() if str(b["id"]) == binding_id), None)
+        if found is None:
+            return RedirectResponse("/ui/signers?flash=Привязка не найдена&flash_err=1",
+                                    status_code=302)
+        binding = found
+        preview = json.dumps(store.resolve(found["company"], found["object_name"]),
+                             ensure_ascii=False, indent=1)
+    return _page(request, "signers_binding.html", "signers", binding=binding,
+                 people=store.people(), set_names=sorted(store.sets()),
+                 preview=preview, flash=flash, flash_err=False)
+
+
+@router.post("/ui/signers/binding/save")
+async def signers_binding_save(request: Request):
+    form = await request.form()
+
+    def role(name: str) -> dict | None:
+        raw = str(form.get(f"{name}_id") or "").strip()
+        if not raw:
+            return None
+        return {"person_id": int(raw), "position": str(form.get(f"{name}_position") or ""),
+                "company": str(form.get(f"{name}_company") or "")}
+
+    raw_id = str(form.get("binding_id") or "").strip()
+    try:
+        request.app.state.signers.save_binding(
+            company=str(form.get("company") or ""),
+            object_name=str(form.get("object_name") or ""),
+            set_name=str(form.get("set_name") or ""),
+            soglasovano=role("soglasovano"), utverzhdayu=role("utverzhdayu"),
+            binding_id=int(raw_id) if raw_id else None)
+    except ValueError as exc:
+        return RedirectResponse(f"/ui/signers?flash={exc}&flash_err=1", status_code=302)
+    audit_log("signers_binding_saved", company=str(form.get("company") or ""))
+    return RedirectResponse("/ui/signers?flash=Привязка сохранена", status_code=302)
+
+
+@router.post("/ui/signers/binding/delete/{binding_id}")
+def signers_binding_delete(request: Request, binding_id: int):
+    request.app.state.signers.delete_binding(binding_id)
+    audit_log("signers_binding_deleted", binding_id=binding_id)
+    return RedirectResponse("/ui/signers?flash=Привязка удалена", status_code=302)
+
+
+@router.get("/ui/signers/set/{name}")
+def signers_set(request: Request, name: str, add: int = 0, flash: str = ""):
+    store = request.app.state.signers
+    rows = [dict(r) for r in store.sets().get(name, [])]
+    rows += [{"person_id": None, "position": "", "print_company": "", "mark": "",
+              "skip_expense_types": "", "default_position": ""}
+             for _ in range(max(add, 1))]
+    used = sum(1 for b in store.bindings() if b["set_name"] == name)
+    return _page(request, "signers_set.html", "signers", name=name, rows=rows,
+                 people=store.people(), used=used, flash=flash, flash_err=False)
+
+
+@router.post("/ui/signers/set/{name}/save")
+async def signers_set_save(request: Request, name: str):
+    form = await request.form()
+    if form.get("add"):
+        return RedirectResponse(f"/ui/signers/set/{name}?add=2", status_code=302)
+    ids = form.getlist("person_id")
+    positions = form.getlist("position")
+    companies = form.getlist("print_company")
+    marks = form.getlist("mark")
+    skips = form.getlist("skip_expense_types")
+    entries = [{"person_id": int(pid), "position": positions[i], "company": companies[i],
+                "mark": marks[i], "skip_expense_types": skips[i]}
+               for i, pid in enumerate(ids) if str(pid).strip()]
+    try:
+        request.app.state.signers.save_set(name, entries)
+    except ValueError as exc:
+        return RedirectResponse(f"/ui/signers?flash={exc}&flash_err=1", status_code=302)
+    audit_log("signers_set_saved", name=name, count=len(entries))
+    return RedirectResponse(f"/ui/signers/set/{name}?flash=Набор сохранён", status_code=302)

@@ -96,7 +96,7 @@ def _deliver(request: Request, workbook, orig_name: str):
 def registry_inner(payload: RegistryPayload, request: Request):
     entries = _sorted(payload.request)
     workbook = render_inner(entries, request.app.state.template_inner,
-                            request.app.state.approvers)
+                            request.app.state.signers)
     name = f"reestr_{_sanitize(_regnum(entries))}_ot_{date.today()}.xlsx"
     return _deliver(request, workbook, name)
 
@@ -111,7 +111,8 @@ def registry_outer(payload: RegistryPayload, request: Request):
 @router.post("/render/registry/priority")
 def registry_priority(payload: RegistryPayload, request: Request):
     entries = _sorted(payload.request)
-    workbook = render_priority(entries, request.app.state.template_priority)
+    workbook = render_priority(entries, request.app.state.template_priority,
+                               request.app.state.signers)
     name = f"reestr_prioritetov_{_sanitize(_regnum(entries))}_ot_{date.today()}.xlsx"
     return _deliver(request, workbook, name)
 
@@ -131,10 +132,10 @@ def registry_get(kind: str, request: Request):
         workbook = render_outer(entries, state.template_outer, state.banks)
         name = f"vneshny_reestr_ot_{date.today()}.xlsx"
     elif kind == "priority":
-        workbook = render_priority(_sorted(entries), state.template_priority)
+        workbook = render_priority(_sorted(entries), state.template_priority, state.signers)
         name = f"reestr_prioritetov_{_sanitize(_regnum(entries))}_ot_{date.today()}.xlsx"
     else:
-        workbook = render_inner(_sorted(entries), state.template_inner, state.approvers)
+        workbook = render_inner(_sorted(entries), state.template_inner, state.signers)
         name = f"reestr_{_sanitize(_regnum(entries))}_ot_{date.today()}.xlsx"
     buf = io.BytesIO()
     workbook.save(buf)

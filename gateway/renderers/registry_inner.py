@@ -1,7 +1,10 @@
 """Внутренний реестр платежей: группировка по паре компания+объект,
-лист на каждую пару, блок подписантов из data/approvers.yaml.
+лист на каждую пару, блок подписей из справочника подписантов шлюза.
 
 Порт models/inner_registry.py. Отличия от оригинала:
+- подписи печатаются готовыми строками, а не номерами строк с VLOOKUP:
+  служебные листы СПР_ПОДПИСАНТОВ и СПР_ОБЪЕКТОВ в выдачу не попадают,
+  и выпущенный реестр больше не меняется задним числом;
 - компания/вид затрат больше не гоняются через служебные ячейки H11/H12
   (данные передаются напрямую, ячейки и так затирались в конце);
 - удалена formula_b — она вычислялась и никогда не записывалась,
@@ -14,27 +17,17 @@ from datetime import datetime
 import openpyxl
 from openpyxl.styles import Alignment, Font
 
-from .approvers import ApproverMatrix
+from ..signers import SignerStore
 from .common import (add_colontituls, create_concatenated_info, find_last_row_in_col,
-                     format_row, hide_sheets, set_border, set_cell_properties,
-                     set_print_area)
+                     format_row, set_cell_properties, set_print_area)
 
 DATA_COLS = ["F", "G", "H", "I"]
 START_ROW = 17
-
-# Формулы подписей: ID строки листа СПР_ПОДПИСАНТОВ пишется в колонку B,
-# Excel подставляет ФИО+должность (F) и компанию (I) сам.
-FORMULA_F = ('=IFERROR(IF(ISNUMBER(VALUE(INDIRECT("B" & ROW()))), '
-             'VLOOKUP(VALUE(INDIRECT("B" & ROW())), СПР_ПОДПИСАНТОВ!$B$14:$K$100, 9, 0) '
-             '& " " & VLOOKUP(VALUE(INDIRECT("B" & ROW())), '
-             'СПР_ПОДПИСАНТОВ!$B$14:$K$100, 7, 0), ""),"")')
-FORMULA_I = ('=IFERROR(IF(ISNUMBER(VALUE(INDIRECT("B" & ROW()))), '
-             'VLOOKUP(VALUE(INDIRECT("B" & ROW())), СПР_ПОДПИСАНТОВ!$B$14:$K$100, 5, 0), '
-             '""),"")')
-AGREED_MARK_ID = 3  # перед этим подписантом пишется строка «СОГЛАСОВАНО»
+UNDERLINE = "_" * 28
+SPR_SHEETS = ("СПР_ПОДПИСАНТОВ", "СПР_ОБЪЕКТОВ")
 
 
-def render_inner(entries: list[dict], template_path, matrix: ApproverMatrix):
+def render_inner(entries: list[dict], template_path, signers: SignerStore):
     workbook = openpyxl.load_workbook(template_path)
 
     groups: dict[tuple[str, str], list[dict]] = defaultdict(list)
@@ -64,67 +57,37 @@ def render_inner(entries: list[dict], template_path, matrix: ApproverMatrix):
             format_row(sheet, row, DATA_COLS, height=100, left_align=("F",))
             row += 1
 
-        _add_signatures(sheet, matrix, company, object_name,
-                        expense_type=str(group[0].get("zatraty") or ""),
-                        signers=group[0].get("signers"))
+        resolved = signers.resolve(company, object_name,
+                                   expense_type=str(group[0].get("zatraty") or ""))
+        _add_signatures(sheet, resolved)
         set_print_area(sheet, anchor_col="F", anchor_col_index=6, area="F1:I{row}")
         add_colontituls(sheet)
 
     workbook.remove(template_sheet)
-    hide_sheets(workbook, ["СПР_ОБЪЕКТОВ", "СПР_ПОДПИСАНТОВ"])
+    for name in SPR_SHEETS:
+        if name in workbook.sheetnames:
+            workbook.remove(workbook[name])
     return workbook
 
 
-UNDERLINE = "_" * 28
-
-
-def _add_signatures(sheet, matrix: ApproverMatrix, company: str, object_name: str,
-                    *, expense_type: str, signers: dict | None = None) -> None:
-    """Блок подписей под таблицей. signers (из payload Doc-V) включает
-    режим готовых значений; иначе — ID из матрицы + формулы шаблона."""
-    final_row = find_last_row_in_col(sheet, 6) or START_ROW - 1
-    if isinstance(signers, dict):
-        _signatures_from_payload(sheet, signers, final_row)
-        return
-
-    directors, approvers = matrix.lookup(company, object_name)
-    approvers = matrix.filter_for_expense_type(approvers, expense_type)
-
-    left_bold = Alignment(horizontal="left")
-    right_bold = Alignment(horizontal="right")
-    bold14 = Font(size=14, bold=True)
-    for i, approver_id in enumerate(approvers, start=1):
-        row = final_row + i * 3
-        if approver_id != AGREED_MARK_ID:
-            set_cell_properties(sheet, row, 2, approver_id, set_border("thin"))
-            set_cell_properties(sheet, row, 6, FORMULA_F, None, left_bold, bold14)
-            set_cell_properties(sheet, row, 9, FORMULA_I, None, right_bold, bold14)
-        else:
-            set_cell_properties(sheet, row, 6, "СОГЛАСОВАНО", None, left_bold, Font(bold=False))
-            set_cell_properties(sheet, row + 2, 2, AGREED_MARK_ID, set_border("thin"))
-            set_cell_properties(sheet, row + 2, 6, FORMULA_F, None, left_bold, bold14)
-            set_cell_properties(sheet, row + 2, 9, FORMULA_I, None, right_bold, bold14)
-
-    sheet["B2"] = directors[0]
-    sheet["B4"] = directors[1]
-
-
-def _person(entry: dict | None) -> tuple[str, str]:
-    """-> (должность + компания, ФИО)."""
-    if not isinstance(entry, dict):
+def _line(person: dict | None) -> tuple[str, str]:
+    """-> (должность с компанией, ФИО)."""
+    if not isinstance(person, dict):
         return "", ""
-    line = " ".join(x for x in (str(entry.get("position") or "").strip(),
-                                str(entry.get("company") or "").strip()) if x)
-    return line, str(entry.get("fio") or "").strip()
+    line = " ".join(x for x in (str(person.get("position") or "").strip(),
+                                str(person.get("company") or "").strip()) if x)
+    return line, str(person.get("fio") or "").strip()
 
 
-def _signatures_from_payload(sheet, signers: dict, final_row: int) -> None:
-    """Подписи готовыми значениями — в те же ячейки, что заполняют
+def _add_signatures(sheet, resolved: dict) -> None:
+    """Подписи готовыми значениями в те же ячейки, что раньше заполняли
     формулы шаблона. Верх: слева «СОГЛАСОВАНО:» (F2/F3/F5), справа
     «УТВЕРЖДАЮ» (I2/I3/I5). Ниже — согласующие с шагом в три строки;
-    запись с "mark" даёт строку-заголовок и подпись двумя ниже."""
-    left_line, left_fio = _person(signers.get("soglasovano"))
-    right_line, right_fio = _person(signers.get("utverzhdayu"))
+    запись с «mark» даёт строку-заголовок и подпись двумя ниже."""
+    final_row = find_last_row_in_col(sheet, 6) or START_ROW - 1
+
+    left_line, left_fio = _line(resolved.get("soglasovano"))
+    right_line, right_fio = _line(resolved.get("utverzhdayu"))
     sheet["F2"] = "СОГЛАСОВАНО:" if left_fio else ""
     sheet["F3"] = left_line
     sheet["F5"] = f"{UNDERLINE} {left_fio}" if left_fio else ""
@@ -132,17 +95,20 @@ def _signatures_from_payload(sheet, signers: dict, final_row: int) -> None:
         sheet["I2"] = ""  # статичный «УТВЕРЖДАЮ» шаблона не должен висеть над пустотой
     sheet["I3"] = right_line
     sheet["I5"] = f"{UNDERLINE} {right_fio}" if right_fio else ""
+    # номера строк справочника больше не пишутся: ячейки очищаются,
+    # чтобы в файле не осталось следов прежней схемы с VLOOKUP
+    sheet["B2"] = None
+    sheet["B4"] = None
 
-    left_bold = Alignment(horizontal="left")
-    right_bold = Alignment(horizontal="right")
+    left_align = Alignment(horizontal="left")
+    right_align = Alignment(horizontal="right")
     bold14 = Font(size=14, bold=True)
-    coordinators = signers.get("coordinators") or []
-    for i, person in enumerate(coordinators, start=1):
+    for i, person in enumerate(resolved.get("coordinators") or [], start=1):
         row = final_row + i * 3
-        line, fio = _person(person)
-        mark = str(person.get("mark") or "").strip() if isinstance(person, dict) else ""
+        line, fio = _line(person)
+        mark = str(person.get("mark") or "").strip()
         if mark:
-            set_cell_properties(sheet, row, 6, mark, None, left_bold, Font(bold=False))
+            set_cell_properties(sheet, row, 6, mark, None, left_align, Font(bold=False))
             row += 2
-        set_cell_properties(sheet, row, 6, line, None, left_bold, bold14)
-        set_cell_properties(sheet, row, 9, fio, None, right_bold, bold14)
+        set_cell_properties(sheet, row, 6, line, None, left_align, bold14)
+        set_cell_properties(sheet, row, 9, fio, None, right_align, bold14)

@@ -19,18 +19,22 @@ def _render(client, payload=None):
     return openpyxl.load_workbook(io.BytesIO(resp.content))
 
 
+def _signature_lines(sheet) -> list[str]:
+    return [str(sheet.cell(row=r, column=6).value)
+            for r in range(18, sheet.max_row + 1)
+            if sheet.cell(row=r, column=6).value]
+
+
 def test_contract(client):
     wb = _render(client)
-    # служебные листы скрыты, REESTR удалён
+    # служебные листы в выдачу не попадают, REESTR удалён
     assert "REESTR" not in wb.sheetnames
-    assert wb["СПР_ПОДПИСАНТОВ"].sheet_state == "hidden"
-    assert wb["СПР_ОБЪЕКТОВ"].sheet_state == "hidden"
-    data_sheets = [s for s in wb.sheetnames if not s.startswith("СПР_")]
+    assert not [s for s in wb.sheetnames if s.startswith("СПР_")]
     # 13 позиций дают лист на каждую пару компания+объект
     pairs = {(d["organization"], d["object_name"]) for d in MODEL["request"]}
-    assert len(data_sheets) == len(pairs)
+    assert len(wb.sheetnames) == len(pairs)
 
-    sheet = next(wb[s] for s in data_sheets if s.endswith("Администрация")
+    sheet = next(wb[s] for s in wb.sheetnames if s.endswith("Администрация")
                  and wb[s]["F17"].value and "Шар-Кұрылыс" in wb[s]["F17"].value)
     assert sheet["G11"].value == "Администрация"
     assert str(sheet["F7"].value).startswith("РЕЕСТР ПЛАТЕЖЕЙ №20/")
@@ -38,14 +42,14 @@ def test_contract(client):
     assert sheet["F17"].value.startswith("Заявитель: ")
     assert isinstance(sheet["H17"].value, (int, float))
     assert sheet["I17"].value
-    # подписанты: директора в B2/B4, ниже — ID с формулами
-    assert sheet["B2"].value == 0 and sheet["B4"].value == 1
-    ids = [sheet.cell(row=r, column=2).value for r in range(18, sheet.max_row + 1)
-           if isinstance(sheet.cell(row=r, column=2).value, int)]
-    assert ids, "нет строк подписантов"
-    formulas = [sheet.cell(row=r, column=6).value for r in range(18, sheet.max_row + 1)
-                if str(sheet.cell(row=r, column=6).value or "").startswith("=IFERROR")]
-    assert "СПР_ПОДПИСАНТОВ" in formulas[0]
+    # подписи готовыми значениями: ни формул, ни номеров строк справочника
+    assert sheet["B2"].value is None and sheet["B4"].value is None
+    assert sheet["I3"].value and "Генеральный директор" in sheet["I3"].value
+    assert sheet["I5"].value.endswith("Аманов Б.Ш.")
+    lines = _signature_lines(sheet)
+    assert lines, "нет строк подписантов"
+    assert not [x for x in lines if x.startswith("=")]
+    assert any("Главный бухгалтер" in x for x in lines)
     assert sheet.print_area
 
 
@@ -57,38 +61,41 @@ def test_empty_zatraty_does_not_crash(client):
 
 def test_expense_type_excludes_approvers(client):
     base = dict(MODEL["request"][0], organization='ТОО "СМУ Аргон"',
-                object_name='ЖК "New Line"')  # список list_3 содержит ID 6
+                object_name='ЖК "New Line"')  # набор list_3 содержит начальника ПТО
     wb_normal = _render(client, {"request": [dict(base, zatraty="СМР")]})
     wb_salary = _render(client, {"request": [dict(base, zatraty="Зарплата")]})
 
-    def ids(wb):
-        sheet = wb[[s for s in wb.sheetnames if not s.startswith("СПР_")][0]]
-        return [sheet.cell(row=r, column=2).value for r in range(18, sheet.max_row + 1)
-                if isinstance(sheet.cell(row=r, column=2).value, int)]
+    def positions(wb):
+        return _signature_lines(wb[wb.sheetnames[0]])
 
-    assert 6 in ids(wb_normal)
-    assert 6 not in ids(wb_salary)
+    excluded = "Начальник производственно-технического отдела"
+    assert any(excluded in x for x in positions(wb_normal))
+    assert not any(excluded in x for x in positions(wb_salary))
 
 
-def test_unknown_company_yields_blank_signatures(client, caplog):
+def test_unknown_company_yields_blank_signatures(client):
     payload = {"request": [dict(MODEL["request"][0], organization="ТОО «Никто»",
                                 object_name="Нигде")]}
     wb = _render(client, payload)
-    sheet = wb[[s for s in wb.sheetnames if not s.startswith("СПР_")][0]]
-    assert sheet["B2"].value == 0 and sheet["B4"].value == 0
+    sheet = wb[wb.sheetnames[0]]
+    # пустая строка при сохранении становится None — важно, что пусто
+    assert not sheet["F2"].value and not sheet["I2"].value
+    assert not sheet["F5"].value and not sheet["I5"].value
+    assert not _signature_lines(sheet)
 
 
-def test_company_name_variations_still_find_approvers(client):
+def test_company_name_variations_still_find_signers(client):
     """Doc-V меняет вид названия организации; подписанты не должны пропадать."""
-    matrix = client.app.state.approvers
-    expected = matrix.lookup("ТОО «Шар-Кұрылыс»", "Администрация")
-    assert expected[0] != [0, 0]
+    store = client.app.state.signers
+    expected = store.resolve("ТОО «Шар-Кұрылыс»", "Администрация")
+    assert expected["utverzhdayu"]
     for variant in ('ТОО «Шар-Кұрылыс» (KZT)', 'ТОО "Шар-Кұрылыс"',
                     'ТОО «Шар-Кұрылыс» ', 'ТОО  «Шар-Кұрылыс»(OLD)',
                     'тоо «шар-курылыс»'):
-        assert matrix.lookup(variant, "Администрация") == expected, variant
+        assert store.resolve(variant, "Администрация") == expected, variant
     # объект тоже: другой стиль кавычек
-    smu = matrix.lookup('ТОО "СМУ Аргон"', 'ЖК "Багыстан-1"')
-    assert smu == matrix.lookup('ТОО «СМУ Аргон»', 'ЖК «Багыстан-1»')
+    smu = store.resolve('ТОО "СМУ Аргон"', 'ЖК "Багыстан-1"')
+    assert smu == store.resolve('ТОО «СМУ Аргон»', 'ЖК «Багыстан-1»')
     # неизвестная компания по-прежнему честно даёт пустой блок
-    assert matrix.lookup("ТОО «Никто»", "Нигде")[0] == [0, 0]
+    unknown = store.resolve("ТОО «Никто»", "Нигде")
+    assert unknown["coordinators"] == [] and unknown["utverzhdayu"] is None
