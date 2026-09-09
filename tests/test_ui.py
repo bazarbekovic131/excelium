@@ -446,18 +446,18 @@ def test_person_delete_guarded_by_usage(client):
     assert not any(p["id"] == free_id for p in store.people())
 
 
-def test_set_row_can_be_dropped(client):
+def test_set_saves_rows_as_sent(client):
     _login(client)
     store = client.app.state.signers
     name = sorted(store.sets())[0]
     before = store.sets()[name]
     assert len(before) > 1
-    data = {"slot": [f"p:{e['person_id']}" for e in before],
-            "position": [e["position"] for e in before],
-            "print_company": [e["print_company"] for e in before],
-            "mark": [e["mark"] for e in before],
-            "skip_expense_types": [e["skip_expense_types"] for e in before],
-            "drop": "0"}
+    kept = before[1:]           # первую строку убрали в браузере
+    data = {"slot": [f"p:{e['person_id']}" for e in kept],
+            "position": [e["position"] for e in kept],
+            "print_company": [e["print_company"] for e in kept],
+            "mark": [e["mark"] for e in kept],
+            "skip_expense_types": [e["skip_expense_types"] for e in kept]}
     client.post(f"/ui/signers/set/{name}/save", data=data, follow_redirects=False)
     after = store.sets()[name]
     assert len(after) == len(before) - 1
@@ -558,3 +558,63 @@ def test_structura_choice_is_visible_in_the_table(client):
     html = client.get("/ui/signers", params={"search": "Витрина"}).text
     assert "Табличный Т.Т." in html
     assert "Генеральный директор" in html
+
+
+def test_people_saved_in_one_go(client):
+    """Правки существующих и новые люди — одним сохранением."""
+    _login(client)
+    store = client.app.state.signers
+    people = store.people()[:3]
+    data = {"person_id": [str(p["id"]) for p in people] + [""],
+            "fio": [p["fio"] + " (правка)" for p in people] + ["Новенький Н.Н."],
+            "position": [p["position"] for p in people] + ["Стажёр"]}
+    r = client.post("/ui/signers/people/save", data=data, follow_redirects=True)
+    assert "Сохранено записей: 4" in r.text and "новых 1" in r.text
+    names = {p["fio"] for p in store.people()}
+    assert "Новенький Н.Н." in names
+    assert all(p["fio"] + " (правка)" in names for p in people)
+
+
+def test_people_skip_empty_rows(client):
+    _login(client)
+    store = client.app.state.signers
+    before = len(store.people())
+    client.post("/ui/signers/people/save",
+                data={"person_id": ["", ""], "fio": ["", "  "], "position": ["", ""]},
+                follow_redirects=False)
+    assert len(store.people()) == before
+
+
+def test_positions_saved_in_one_go(client):
+    _login(client)
+    store = client.app.state.signers
+    client.post("/directory/structura", headers=docv_headers(), json={"items": [
+        {"uid": "u-700", "display_name": "Кандидат К.К.", "position": "Директор"}]})
+    existing = store.gateway_positions()[:2]
+    data = {"name": existing + ["Новая должность", "  "],
+            "slot": ["r:u-700||", ""] + ["r:u-700||", ""]}
+    r = client.post("/ui/signers/positions/save", data=data, follow_redirects=True)
+    assert "Сохранено должностей: 3" in r.text
+    cards = {c["name"]: c for c in store.position_cards()}
+    assert cards[existing[0]]["holder"] == "Кандидат К.К."
+    assert cards["Новая должность"]["holder"] == "Кандидат К.К."
+    assert "  " not in cards
+
+
+def test_position_delete_from_list(client):
+    _login(client)
+    store = client.app.state.signers
+    store.add_position("Лишняя должность")
+    r = client.post("/ui/signers/positions/delete", data={"delete": "Лишняя должность"},
+                    follow_redirects=True)
+    assert "убрана" in r.text
+    assert "Лишняя должность" not in store.gateway_positions()
+
+
+def test_set_editor_has_no_reload_buttons(client):
+    """Строки набора добавляются в браузере, а не перезагрузкой страницы."""
+    _login(client)
+    html = client.get("/ui/signers/set/list_1").text
+    assert 'id="row-template"' in html and "data-add-row" in html
+    assert "data-drop-row" in html and 'data-move-row="up"' in html
+    assert "?add=" not in html

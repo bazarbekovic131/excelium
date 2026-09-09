@@ -4,9 +4,11 @@
 <div class="page-head">
   <div>
     <h1>Должности шлюза</h1>
-    <span class="sub">печатается название, подпись — от назначенного</span>
+    <span class="sub">печатается название, подпись — от назначенного · {{ position_cards|length }} должностей</span>
   </div>
-  <div class="head-actions"><span class="chip neutral">должностей: {{ position_cards|length }}</span></div>
+  <div class="head-actions">
+    <button class="btn" data-add-row form="posform">＋ Добавить должность</button>
+  </div>
 </div>
 
 <div class="subnav">
@@ -18,65 +20,93 @@
 
 {% if flash %}<div class="flash {{ 'err' if flash_err }}">{{ flash }}</div>{% endif %}
 
+<form method="post" action="/ui/signers/positions/save" id="posform">
 <div class="card">
   <div class="card-head">
-    <span class="card-title">Должности шлюза</span>
-    <span class="card-note">печатается название, подпись — от назначенного</span>
+    <span class="card-title">Каталог</span>
+    <span class="card-note">назначения меняются пачкой, сохранение одно на всё</span>
   </div>
+  <table id="rowlist">
+    <thead><tr>
+      <th style="width:30px">№</th><th style="width:300px">Должность</th>
+      <th>Кто её занимает</th><th style="width:80px">Подписей</th><th style="width:40px"></th>
+    </tr></thead>
+    <tbody>
+    {% for pos in position_cards %}
+    <tr>
+      <td class="muted" data-num>{{ loop.index }}</td>
+      <td><input type="hidden" name="name" value="{{ pos.name }}">
+        <b>{{ pos.name }}</b>
+        {% if pos.vacant %}<span class="chip warn">не назначен</span>{% endif %}</td>
+      <td>
+        <div class="combo">
+          <input type="text" data-filter-for="slot" placeholder="поиск: фамилия, должность, отдел">
+          <select name="slot">
+            <option value="">— никто —</option>
+            <optgroup label="Сотрудник из Структуры ({{ staff|length }})">
+              {% for person in staff %}
+              <option value="{{ person.value }}" {{ 'selected' if person.value == pos.holder_slot }}>{{ person.fio }}{% if person.position %} · {{ person.position }}{% endif %}{% if person.department %} · {{ person.department }}{% endif %}</option>
+              {% endfor %}
+            </optgroup>
+            <optgroup label="Человек из справочника шлюза ({{ people|length }})">
+              {% for x in people %}
+              <option value="p:{{ x.id }}" {{ 'selected' if 'p:' ~ x.id == pos.holder_slot }}>{{ x.fio }}</option>
+              {% endfor %}
+            </optgroup>
+          </select>
+        </div>
+      </td>
+      <td><span class="chip neutral">{{ pos.used }}</span></td>
+      <td>
+        {% if pos.used %}
+        <span class="btn ghost sm" style="opacity:.4;cursor:not-allowed"
+              title="На должность ссылаются {{ pos.used }} подписей">✕</span>
+        {% else %}
+        <button class="btn ghost sm" title="Удалить должность"
+                formaction="/ui/signers/positions/delete"
+                name="delete" value="{{ pos.name }}"
+                onclick="return confirm('Убрать «{{ pos.name }}» из каталога?')">✕</button>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
   <div class="card-body">
-    <form method="post" action="/ui/signers/position" class="inline"
-          style="display:flex;gap:6px;margin-bottom:12px">
-      <input type="text" name="name" placeholder="Новая должность" required>
-      <button class="btn" data-busy="…">Добавить</button>
-    </form>
-    <table>
-      <thead><tr><th>Должность</th><th style="width:280px">Кто её занимает</th>
-        <th style="width:60px">Подписей</th><th style="width:40px"></th></tr></thead>
-      <tbody>
-      {% for pos in position_cards %}
-      <tr>
-        <td>{{ pos.name }}
-          {% if pos.vacant %}<span class="chip warn">не назначен</span>{% endif %}</td>
-        <td colspan="2" style="padding:0">
-          <form method="post" action="/ui/signers/position/assign" class="inline"
-                style="display:flex;gap:6px;align-items:center;padding:6px 0">
-            <input type="hidden" name="name" value="{{ pos.name }}">
-            <div class="combo" style="flex:1">
-              <input type="text" data-filter-for="hold-{{ loop.index }}"
-                     placeholder="поиск: фамилия, должность, отдел">
-              <select name="slot" id="hold-{{ loop.index }}">
-                <option value="">— никто —</option>
-                <optgroup label="Сотрудник из Структуры ({{ staff|length }})">
-                  {% for person in staff %}
-                  <option value="{{ person.value }}" {{ 'selected' if person.value == pos.holder_slot }}>
-                    {{ person.fio }}{% if person.position %} · {{ person.position }}{% endif %}{% if person.department %} · {{ person.department }}{% endif %}
-                  </option>
-                  {% endfor %}
-                </optgroup>
-                <optgroup label="Человек из справочника шлюза ({{ people|length }})">
-                  {% for x in people %}
-                  <option value="p:{{ x.id }}" {{ 'selected' if 'p:' ~ x.id == pos.holder_slot }}>{{ x.fio }}</option>
-                  {% endfor %}
-                </optgroup>
-              </select>
-            </div>
-            <span class="chip neutral" title="подписей ссылается на должность">{{ pos.used }}</span>
-            <button class="btn ghost sm" data-busy="…" title="Назначить">✓</button>
-          </form>
-        </td>
-        <td>
-          <form method="post" action="/ui/signers/position" class="inline"
-                onsubmit="return confirm('Убрать «{{ pos.name }}» из каталога?')">
-            <input type="hidden" name="delete" value="{{ pos.name }}">
-            <button class="btn ghost sm" title="Удалить должность">✕</button>
-          </form>
-        </td>
-      </tr>
-      {% else %}
-      <tr><td colspan="4"><div class="empty">Каталог пуст</div></td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
+    <div class="empty" id="rowlist-empty" hidden>Каталог пуст.</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn" data-busy="Сохраняем…">Сохранить</button>
+      <button class="btn ghost" data-add-row>＋ Добавить должность</button>
+      <span class="hint">Строка без названия не сохраняется.</span>
+    </div>
   </div>
 </div>
+</form>
+
+<template id="row-template">
+  <tr>
+    <td class="muted" data-num></td>
+    <td><input type="text" name="name" placeholder="Например: Генеральный директор Шар-Құрылыс"></td>
+    <td>
+      <div class="combo">
+        <input type="text" data-filter-for="slot" placeholder="поиск: фамилия, должность, отдел">
+        <select name="slot">
+          <option value="">— никто —</option>
+          <optgroup label="Сотрудник из Структуры ({{ staff|length }})">
+            {% for person in staff %}
+            <option value="{{ person.value }}">{{ person.fio }}{% if person.position %} · {{ person.position }}{% endif %}{% if person.department %} · {{ person.department }}{% endif %}</option>
+            {% endfor %}
+          </optgroup>
+          <optgroup label="Человек из справочника шлюза ({{ people|length }})">
+            {% for x in people %}
+            <option value="p:{{ x.id }}">{{ x.fio }}</option>
+            {% endfor %}
+          </optgroup>
+        </select>
+      </div>
+    </td>
+    <td><span class="chip neutral">0</span></td>
+    <td><button class="btn ghost sm" data-drop-row title="Убрать строку">✕</button></td>
+  </tr>
+</template>
 {% endblock %}

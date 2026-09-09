@@ -963,6 +963,70 @@ def signers_link(request: Request):
     return RedirectResponse(f"/ui/signers/people?flash={flash}", status_code=302)
 
 
+@router.post("/ui/signers/people/save")
+async def signers_people_save(request: Request):
+    """Весь список разом: правки существующих и новые строки в одном
+    сохранении — по одному человеку за перезагрузку это мучение."""
+    form = await request.form()
+    store = request.app.state.signers
+    ids = form.getlist("person_id")
+    fios = form.getlist("fio")
+    positions = form.getlist("position")
+    saved = added = 0
+    for i, fio in enumerate(fios):
+        if not str(fio).strip():
+            continue
+        raw = str(ids[i] if i < len(ids) else "").strip()
+        try:
+            store.save_person(int(raw) if raw else None, fio,
+                              positions[i] if i < len(positions) else "")
+        except ValueError:
+            continue
+        saved += 1
+        added += 0 if raw else 1
+    audit_log("signers_people_saved", saved=saved, added=added)
+    tail = f", из них новых {added}" if added else ""
+    return RedirectResponse(f"/ui/signers/people?flash=Сохранено записей: {saved}{tail}",
+                            status_code=302)
+
+
+@router.post("/ui/signers/positions/save")
+async def signers_positions_save(request: Request):
+    form = await request.form()
+    store = request.app.state.signers
+    names = form.getlist("name")
+    slots = form.getlist("slot")
+    saved = 0
+    for i, name in enumerate(names):
+        name = str(name).strip()
+        if not name:
+            continue
+        chosen = parse_slot(slots[i] if i < len(slots) else "")
+        store.add_position(name)
+        store.assign_position(name, holder_uid=chosen["ref"],
+                              holder_person_id=chosen["person_id"])
+        saved += 1
+    audit_log("signers_positions_saved", count=saved)
+    return RedirectResponse(f"/ui/signers/positions?flash=Сохранено должностей: {saved}",
+                            status_code=302)
+
+
+@router.post("/ui/signers/positions/delete")
+async def signers_positions_delete(request: Request):
+    form = await request.form()
+    name = str(form.get("delete") or "")
+    store = request.app.state.signers
+    used = store.position_usage(name)
+    if used:
+        return RedirectResponse(
+            f"/ui/signers/positions?flash=На должность «{name}» ссылаются {used}"
+            " подписей. Сначала переключите их&flash_err=1", status_code=302)
+    store.delete_position(name)
+    audit_log("signers_position_deleted", name=name)
+    return RedirectResponse(f"/ui/signers/positions?flash=Должность «{name}» убрана",
+                            status_code=302)
+
+
 @router.post("/ui/signers/position")
 def signers_position(request: Request, name: str = Form(default=""),
                      delete: str = Form(default="")):
@@ -1153,14 +1217,11 @@ def signers_binding_delete(request: Request, binding_id: int):
 
 
 @router.get("/ui/signers/set/{name}")
-def signers_set(request: Request, name: str, add: int = 0, flash: str = ""):
+def signers_set(request: Request, name: str, flash: str = ""):
     store = request.app.state.signers
     rows = [{**dict(r), "slot": slot_value(r["position_ref"], r["dept_ref"],
                                            r["person_id"])}
             for r in store.sets().get(name, [])]
-    rows += [{"person_id": None, "slot": "", "position": "", "print_company": "",
-              "mark": "", "skip_expense_types": "", "default_position": ""}
-             for _ in range(max(add, 1))]
     used = sum(1 for b in store.bindings() if b["set_name"] == name)
     return _page(request, "signers_set.html", "signers", name=name, rows=rows,
                  people=store.people(), positions=_position_options(store),
@@ -1173,13 +1234,7 @@ def signers_set(request: Request, name: str, add: int = 0, flash: str = ""):
 @router.post("/ui/signers/set/{name}/save")
 async def signers_set_save(request: Request, name: str):
     form = await request.form()
-    if form.get("add"):
-        return RedirectResponse(f"/ui/signers/set/{name}?add=2", status_code=302)
     slots = form.getlist("slot")
-    drop = str(form.get("drop") or "")
-    if drop.isdigit() and int(drop) < len(slots):
-        slots = list(slots)
-        slots[int(drop)] = ""   # пустой подписант = строка не сохраняется
     positions = form.getlist("position")
     companies = form.getlist("print_company")
     marks = form.getlist("mark")

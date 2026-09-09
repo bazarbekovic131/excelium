@@ -94,7 +94,9 @@ document.addEventListener('keydown', function (e) {
 document.addEventListener('input', function (e) {
   const box = e.target.closest('[data-filter-for]');
   if (!box) return;
-  const select = document.getElementById(box.dataset.filterFor);
+  const wrap = box.closest('.combo');
+  const select = (wrap && wrap.querySelector('select'))
+    || document.getElementById(box.dataset.filterFor);
   if (!select) return;
   const words = box.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
   let shown = 0;
@@ -111,6 +113,54 @@ document.addEventListener('input', function (e) {
   const counter = box.parentNode.querySelector('[data-filter-count]');
   if (counter) counter.textContent = words.length ? shown + ' подходит' : '';
 });
+
+// Список подписей: строки добавляются, удаляются и переставляются на
+// месте. Раньше каждая строка стоила перезагрузки страницы.
+(function () {
+  const table = document.getElementById('rowlist');
+  if (!table) return;
+  const tpl = document.getElementById('row-template');
+  const body = table.querySelector('tbody');
+
+  function renumber() {
+    body.querySelectorAll('tr').forEach(function (tr, i) {
+      const cell = tr.querySelector('[data-num]');
+      if (cell) cell.textContent = i + 1;
+    });
+    const empty = document.getElementById('rowlist-empty');
+    if (empty) empty.hidden = body.querySelectorAll('tr').length > 0;
+  }
+
+  document.addEventListener('click', function (e) {
+    const add = e.target.closest('[data-add-row]');
+    if (add) {
+      e.preventDefault();
+      body.appendChild(tpl.content.cloneNode(true));
+      renumber();
+      const last = body.lastElementChild;
+      const filter = last && last.querySelector('[data-filter-for]');
+      if (filter) filter.focus();
+      return;
+    }
+    const drop = e.target.closest('[data-drop-row]');
+    if (drop) {
+      e.preventDefault();
+      drop.closest('tr').remove();
+      renumber();
+      return;
+    }
+    const move = e.target.closest('[data-move-row]');
+    if (move) {
+      e.preventDefault();
+      const tr = move.closest('tr');
+      const up = move.dataset.moveRow === 'up';
+      const other = up ? tr.previousElementSibling : tr.nextElementSibling;
+      if (other) { up ? body.insertBefore(tr, other) : body.insertBefore(other, tr); }
+      renumber();
+    }
+  });
+  renumber();
+})();
 
 // Автообновление живых страниц — состояние переключателя запоминается.
 (function () {
