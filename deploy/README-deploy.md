@@ -50,6 +50,23 @@ sudo systemctl restart docv-gateway
 - /ops restart_unit — строка в sudoers (через `visudo`):
   `radmin ALL=(root) NOPASSWD: /usr/bin/systemctl restart docv-server.service`
 
+## Данные, которых нет в git
+
+`utils/firmen_und_objekte.py` (матрица подписантов) и `excel_templates/`
+(шаблоны с листом СПР_ПОДПИСАНТОВ) — боевые данные: их правят на
+сервере, поэтому в репозитории их нет и быть не должно. При
+развёртывании на новой машине их переносят руками.
+
+Справочник шлюза `data/approvers.yaml` собирается из матрицы на месте:
+
+```
+python3 scripts/approvers_from_py.py > data/approvers.yaml
+sudo systemctl restart docv-gateway
+```
+
+Делайте это после каждой правки матрицы, иначе шлюз будет печатать
+прежних подписантов.
+
 ## Секреты
 
 Токены генерируются `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`.
