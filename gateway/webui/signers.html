@@ -7,16 +7,18 @@
     <span class="sub">кто подписывает реестры — состав знает шлюз, в Excel уходят готовые строки</span>
   </div>
   <div class="head-actions">
+    <span class="chip neutral">компаний: {{ cards|length }}</span>
     <span class="chip neutral">привязок: {{ stats.bindings }}</span>
-    <span class="chip neutral">людей: {{ stats.people }}</span>
-    <span class="chip {{ 'success' if stats.linked else 'neutral' }}">из Doc-V: {{ stats.linked }}</span>
-    <form method="post" action="/ui/signers/link" style="display:inline">
-      <button class="btn ghost" data-busy="Сверяем…">Обновить ФИО из Структуры</button>
-    </form>
     <a class="btn" href="/ui/signers/binding/new">＋ Привязка</a>
   </div>
 </div>
 
+<div class="subnav">
+  <a href="/ui/signers" class="{{ 'on' if tab == 'companies' }}">Компании</a>
+  <a href="/ui/signers/sets" class="{{ 'on' if tab == 'sets' }}">Наборы согласующих</a>
+  <a href="/ui/signers/positions" class="{{ 'on' if tab == 'positions' }}">Должности шлюза</a>
+  <a href="/ui/signers/people" class="{{ 'on' if tab == 'people' }}">Люди</a>
+</div>
 {% if flash %}<div class="flash {{ 'err' if flash_err }}">{{ flash }}</div>{% endif %}
 
 <form class="filters" method="get" action="/ui/signers" data-no-lock>
@@ -86,136 +88,5 @@
   {% else %}
   <div class="card-body"><div class="empty">Ничего не нашлось</div></div>
   {% endif %}
-</div>
-
-<div class="grid-half">
-  <div class="card">
-    <div class="card-head">
-      <span class="card-title">Наборы согласующих</span>
-      <span class="card-note">подписи под таблицей, по порядку</span>
-    </div>
-    <div class="card-body">
-      {% for name, entries in sets.items() %}
-      <div style="margin-bottom:12px">
-        <a href="/ui/signers/set/{{ name }}"><b>{{ name }}</b></a>
-        <span class="muted" style="font-size:12px"> — {{ entries|length }} подписей</span>
-        <div class="muted" style="font-size:12px;margin-top:2px">
-          {{ entries|map(attribute='fio')|join(' · ') }}
-        </div>
-      </div>
-      {% else %}
-      <div class="empty">Наборов нет</div>
-      {% endfor %}
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-head">
-      <span class="card-title">Должности шлюза</span>
-      <span class="card-note">печатается название, подпись — от назначенного</span>
-    </div>
-    <div class="card-body">
-      <form method="post" action="/ui/signers/position" class="inline"
-            style="display:flex;gap:6px;margin-bottom:12px">
-        <input type="text" name="name" placeholder="Новая должность" required>
-        <button class="btn" data-busy="…">Добавить</button>
-      </form>
-      <table>
-        <thead><tr><th>Должность</th><th style="width:280px">Кто её занимает</th>
-          <th style="width:60px">Подписей</th><th style="width:40px"></th></tr></thead>
-        <tbody>
-        {% for pos in position_cards %}
-        <tr>
-          <td>{{ pos.name }}
-            {% if pos.vacant %}<span class="chip warn">не назначен</span>{% endif %}</td>
-          <td colspan="2" style="padding:0">
-            <form method="post" action="/ui/signers/position/assign" class="inline"
-                  style="display:flex;gap:6px;align-items:center;padding:6px 0">
-              <input type="hidden" name="name" value="{{ pos.name }}">
-              <div class="combo" style="flex:1">
-                <input type="text" data-filter-for="hold-{{ loop.index }}"
-                       placeholder="поиск: фамилия, должность, отдел">
-                <select name="slot" id="hold-{{ loop.index }}">
-                  <option value="">— никто —</option>
-                  <optgroup label="Сотрудник из Структуры ({{ staff|length }})">
-                    {% for person in staff %}
-                    <option value="{{ person.value }}" {{ 'selected' if person.value == pos.holder_slot }}>
-                      {{ person.fio }}{% if person.position %} · {{ person.position }}{% endif %}{% if person.department %} · {{ person.department }}{% endif %}
-                    </option>
-                    {% endfor %}
-                  </optgroup>
-                  <optgroup label="Человек из справочника шлюза ({{ people|length }})">
-                    {% for x in people %}
-                    <option value="p:{{ x.id }}" {{ 'selected' if 'p:' ~ x.id == pos.holder_slot }}>{{ x.fio }}</option>
-                    {% endfor %}
-                  </optgroup>
-                </select>
-              </div>
-              <span class="chip neutral" title="подписей ссылается на должность">{{ pos.used }}</span>
-              <button class="btn ghost sm" data-busy="…" title="Назначить">✓</button>
-            </form>
-          </td>
-          <td>
-            <form method="post" action="/ui/signers/position" class="inline"
-                  onsubmit="return confirm('Убрать «{{ pos.name }}» из каталога?')">
-              <input type="hidden" name="delete" value="{{ pos.name }}">
-              <button class="btn ghost sm" title="Удалить должность">✕</button>
-            </form>
-          </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="4"><div class="empty">Каталог пуст</div></td></tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-head">
-      <span class="card-title">Люди</span>
-      <span class="card-note">для тех, кого нет в Структуре Doc-V</span>
-    </div>
-    <div class="card-body">
-      <form method="post" action="/ui/signers/person" class="inline"
-            style="display:flex;gap:6px;margin-bottom:12px">
-        <input type="text" name="fio" placeholder="Новый человек: ФИО" required>
-        <input type="text" name="position" placeholder="должность">
-        <button class="btn" data-busy="…">Добавить</button>
-      </form>
-      <table>
-        <thead><tr><th>ФИО</th><th>Должность</th><th style="width:110px">Doc-V · подписей</th><th style="width:40px"></th></tr></thead>
-        <tbody>
-        {% for p in people %}
-        <tr>
-          <td colspan="4" style="padding:0">
-            <div style="display:flex;gap:6px;align-items:center;padding:6px 0">
-            <form method="post" action="/ui/signers/person" class="inline"
-                  style="display:flex;gap:6px;align-items:center">
-              <input type="hidden" name="person_id" value="{{ p.id }}">
-              <input type="text" name="fio" value="{{ p.fio }}" style="max-width:230px">
-              <input type="text" name="position" value="{{ p.position }}" style="max-width:250px">
-              <span class="chip {{ 'success' if p.docv_uid else 'neutral' }}" title="{{ p.docv_uid or 'нет связи со Структурой' }}">{{ '✓' if p.docv_uid else '—' }}</span>
-              <span class="chip neutral" title="подписей держится на этом человеке">{{ people_usage.get(p.id, 0) }}</span>
-              <button class="btn ghost sm" data-busy="…" title="Сохранить">✓</button>
-            </form>
-            {% if people_usage.get(p.id, 0) %}
-            <span class="btn ghost sm" style="opacity:.4;cursor:not-allowed"
-                  title="Сначала переключите {{ people_usage.get(p.id, 0) }} подписей на должность или другого человека">✕</span>
-            {% else %}
-            <form method="post" action="/ui/signers/person/delete/{{ p.id }}" class="inline"
-                  style="display:inline"
-                  onsubmit="return confirm('Удалить {{ p.fio }} из справочника?')">
-              <button class="btn ghost sm" title="Удалить">✕</button>
-            </form>
-            {% endif %}
-            </div>
-          </td>
-        </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
 </div>
 {% endblock %}

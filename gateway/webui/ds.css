@@ -113,6 +113,14 @@ main { padding:24px; display:flex; flex-direction:column; gap:16px; }
 .grid-2 { display:grid; grid-template-columns:2fr 1fr; gap:20px; }
 .grid-half { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
 .grid-third { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
+.subnav { display:flex; gap:4px; margin-bottom:16px; flex-wrap:wrap; }
+.subnav a {
+  padding:7px 14px; border-radius:var(--radius-md); text-decoration:none;
+  font:500 13px/1 var(--font-sans); color:var(--text-muted);
+  box-shadow:var(--ring-default); background:var(--surface);
+}
+.subnav a:hover { color:var(--text-body); }
+.subnav a.on { color:var(--brand-ink); box-shadow:var(--ring-brand); background:var(--brand-surface); }
 .company-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:16px; }
 .company-grid .card.picked { box-shadow:var(--ring-brand); }
 .pair { display:flex; gap:10px; align-items:baseline; padding:3px 0; font-size:13px; }

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Наборы согласующих — Doc-V Gateway{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Наборы согласующих</h1>
+    <span class="sub">подписи под таблицей реестра, по порядку</span>
+  </div>
+  <div class="head-actions"><span class="chip neutral">наборов: {{ sets|length }}</span></div>
+</div>
+
+<div class="subnav">
+  <a href="/ui/signers" class="{{ 'on' if tab == 'companies' }}">Компании</a>
+  <a href="/ui/signers/sets" class="{{ 'on' if tab == 'sets' }}">Наборы согласующих</a>
+  <a href="/ui/signers/positions" class="{{ 'on' if tab == 'positions' }}">Должности шлюза</a>
+  <a href="/ui/signers/people" class="{{ 'on' if tab == 'people' }}">Люди</a>
+</div>
+
+{% if flash %}<div class="flash {{ 'err' if flash_err }}">{{ flash }}</div>{% endif %}
+
+<div class="card">
+  <div class="card-head">
+    <span class="card-title">Наборы согласующих</span>
+    <span class="card-note">подписи под таблицей, по порядку</span>
+  </div>
+  <div class="card-body">
+    {% for name, entries in sets.items() %}
+    <div style="margin-bottom:12px">
+      <a href="/ui/signers/set/{{ name }}"><b>{{ name }}</b></a>
+      <span class="muted" style="font-size:12px"> — {{ entries|length }} подписей</span>
+      <div class="muted" style="font-size:12px;margin-top:2px">
+        {{ entries|map(attribute='fio')|join(' · ') }}
+      </div>
+    </div>
+    {% else %}
+    <div class="empty">Наборов нет</div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

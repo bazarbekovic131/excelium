@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Должности шлюза — Doc-V Gateway{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Должности шлюза</h1>
+    <span class="sub">печатается название, подпись — от назначенного</span>
+  </div>
+  <div class="head-actions"><span class="chip neutral">должностей: {{ position_cards|length }}</span></div>
+</div>
+
+<div class="subnav">
+  <a href="/ui/signers" class="{{ 'on' if tab == 'companies' }}">Компании</a>
+  <a href="/ui/signers/sets" class="{{ 'on' if tab == 'sets' }}">Наборы согласующих</a>
+  <a href="/ui/signers/positions" class="{{ 'on' if tab == 'positions' }}">Должности шлюза</a>
+  <a href="/ui/signers/people" class="{{ 'on' if tab == 'people' }}">Люди</a>
+</div>
+
+{% if flash %}<div class="flash {{ 'err' if flash_err }}">{{ flash }}</div>{% endif %}
+
+<div class="card">
+  <div class="card-head">
+    <span class="card-title">Должности шлюза</span>
+    <span class="card-note">печатается название, подпись — от назначенного</span>
+  </div>
+  <div class="card-body">
+    <form method="post" action="/ui/signers/position" class="inline"
+          style="display:flex;gap:6px;margin-bottom:12px">
+      <input type="text" name="name" placeholder="Новая должность" required>
+      <button class="btn" data-busy="…">Добавить</button>
+    </form>
+    <table>
+      <thead><tr><th>Должность</th><th style="width:280px">Кто её занимает</th>
+        <th style="width:60px">Подписей</th><th style="width:40px"></th></tr></thead>
+      <tbody>
+      {% for pos in position_cards %}
+      <tr>
+        <td>{{ pos.name }}
+          {% if pos.vacant %}<span class="chip warn">не назначен</span>{% endif %}</td>
+        <td colspan="2" style="padding:0">
+          <form method="post" action="/ui/signers/position/assign" class="inline"
+                style="display:flex;gap:6px;align-items:center;padding:6px 0">
+            <input type="hidden" name="name" value="{{ pos.name }}">
+            <div class="combo" style="flex:1">
+              <input type="text" data-filter-for="hold-{{ loop.index }}"
+                     placeholder="поиск: фамилия, должность, отдел">
+              <select name="slot" id="hold-{{ loop.index }}">
+                <option value="">— никто —</option>
+                <optgroup label="Сотрудник из Структуры ({{ staff|length }})">
+                  {% for person in staff %}
+                  <option value="{{ person.value }}" {{ 'selected' if person.value == pos.holder_slot }}>
+                    {{ person.fio }}{% if person.position %} · {{ person.position }}{% endif %}{% if person.department %} · {{ person.department }}{% endif %}
+                  </option>
+                  {% endfor %}
+                </optgroup>
+                <optgroup label="Человек из справочника шлюза ({{ people|length }})">
+                  {% for x in people %}
+                  <option value="p:{{ x.id }}" {{ 'selected' if 'p:' ~ x.id == pos.holder_slot }}>{{ x.fio }}</option>
+                  {% endfor %}
+                </optgroup>
+              </select>
+            </div>
+            <span class="chip neutral" title="подписей ссылается на должность">{{ pos.used }}</span>
+            <button class="btn ghost sm" data-busy="…" title="Назначить">✓</button>
+          </form>
+        </td>
+        <td>
+          <form method="post" action="/ui/signers/position" class="inline"
+                onsubmit="return confirm('Убрать «{{ pos.name }}» из каталога?')">
+            <input type="hidden" name="delete" value="{{ pos.name }}">
+            <button class="btn ghost sm" title="Удалить должность">✕</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4"><div class="empty">Каталог пуст</div></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

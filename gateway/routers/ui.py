@@ -876,24 +876,19 @@ async def settings_save(request: Request):
 
 def _binding_rows(store, search: str = "") -> list[dict]:
     """Привязки с уже подставленными ФИО — таблица должна читаться
-    глазами, а не показывать идентификаторы."""
-    people = {p["id"]: p for p in store.people()}
-
-    def person(row, role):
-        found = people.get(row[f"{role}_id"])
-        if not found:
-            return None
-        return {"fio": found["fio"],
-                "position": row[f"{role}_position"] or found["position"],
-                "company": row[f"{role}_company"] or row["company"]}
-
+    глазами, а не показывать идентификаторы. Подписант считается тем же
+    подбором, что и при выпуске реестра: иначе выбор из Структуры или
+    должность шлюза выглядели бы в таблице пустыми."""
     needle = search.strip().casefold()
+    ctx = store.context()
     rows = []
     for row in store.bindings():
         if needle and needle not in f"{row['company']} {row['object_name']}".casefold():
             continue
-        rows.append({**row, "left": person(row, "soglasovano"),
-                     "right": person(row, "utverzhdayu")})
+        resolved = store.resolve(row["company"], row["object_name"], ctx=ctx)
+        rows.append({**row, "left": resolved["soglasovano"],
+                     "right": resolved["utverzhdayu"],
+                     "coordinators": resolved["coordinators"]})
     return rows
 
 
@@ -923,13 +918,31 @@ def signers_page(request: Request, search: str = "", company: str = "",
     cards = _company_cards(rows)
     if company:
         rows = [r for r in rows if r["company"] == company]
-    return _page(request, "signers.html", "signers", search=search, company=company,
-                 bindings=rows, cards=cards, sets=store.sets(),
+    return _page(request, "signers.html", "signers", tab="companies", search=search,
+                 company=company, bindings=rows, cards=cards, stats=store.stats(),
+                 flash=flash, flash_err=bool(flash_err))
+
+
+@router.get("/ui/signers/sets")
+def signers_sets_page(request: Request, flash: str = "", flash_err: str = ""):
+    store = request.app.state.signers
+    return _page(request, "signers_sets.html", "signers", tab="sets",
+                 sets=store.sets(), flash=flash, flash_err=bool(flash_err))
+
+
+@router.get("/ui/signers/positions")
+def signers_positions_page(request: Request, flash: str = "", flash_err: str = ""):
+    store = request.app.state.signers
+    return _page(request, "signers_positions.html", "signers", tab="positions",
+                 position_cards=store.position_cards(), staff=_staff_options(store),
+                 people=store.people(), flash=flash, flash_err=bool(flash_err))
+
+
+@router.get("/ui/signers/people")
+def signers_people_page(request: Request, flash: str = "", flash_err: str = ""):
+    store = request.app.state.signers
+    return _page(request, "signers_people.html", "signers", tab="people",
                  people=store.people(), people_usage=store.people_usage(),
-                 stats=store.stats(),
-                 gateway_positions=store.gateway_positions(),
-                 position_cards=store.position_cards(),
-                 staff=_staff_options(store),
                  flash=flash, flash_err=bool(flash_err))
 
 
@@ -939,7 +952,7 @@ def signers_link(request: Request):
     audit_log("signers_linked", **result)
     if not result["staff"]:
         return RedirectResponse(
-            "/ui/signers?flash=В Структуре нет записей с должностью. Выгрузите её"
+            "/ui/signers/people?flash=В Структуре нет записей с должностью. Выгрузите её"
             " из Doc-V: действие «HTTP-запрос» POST /directory/structura&flash_err=1",
             status_code=302)
     flash = (f"Структура: {result['staff']} сотрудников. Узнали "
@@ -947,7 +960,7 @@ def signers_link(request: Request):
     if result["unmatched"]:
         flash += (f" Не нашли в Doc-V: {result['unmatched']} — им подпись идёт"
                   " по записи справочника.")
-    return RedirectResponse(f"/ui/signers?flash={flash}", status_code=302)
+    return RedirectResponse(f"/ui/signers/people?flash={flash}", status_code=302)
 
 
 @router.post("/ui/signers/position")
@@ -958,17 +971,17 @@ def signers_position(request: Request, name: str = Form(default=""),
         used = store.position_usage(delete)
         if used:
             return RedirectResponse(
-                f"/ui/signers?flash=На должность «{delete}» ссылаются {used} подписей."
+                f"/ui/signers/positions?flash=На должность «{delete}» ссылаются {used} подписей."
                 " Сначала переключите их&flash_err=1", status_code=302)
         store.delete_position(delete)
         audit_log("signers_position_deleted", name=delete)
-        return RedirectResponse(f"/ui/signers?flash=Должность «{delete}» убрана из каталога",
+        return RedirectResponse(f"/ui/signers/positions?flash=Должность «{delete}» убрана из каталога",
                                 status_code=302)
     added = store.add_position(name)
     if not added:
-        return RedirectResponse("/ui/signers?flash=Пустое название&flash_err=1",
+        return RedirectResponse("/ui/signers/positions?flash=Пустое название&flash_err=1",
                                 status_code=302)
-    return RedirectResponse(f"/ui/signers?flash=Должность «{added}» в каталоге."
+    return RedirectResponse(f"/ui/signers/positions?flash=Должность «{added}» в каталоге."
                             " Назначьте на неё человека", status_code=302)
 
 
@@ -984,7 +997,7 @@ def signers_position_assign(request: Request, name: str = Form(...),
     audit_log("signers_position_assigned", name=name, holder=slot)
     used = store.position_usage(name)
     tail = f" Подписей, где она используется: {used}." if used else ""
-    return RedirectResponse(f"/ui/signers?flash=Назначение для «{name}» сохранено.{tail}",
+    return RedirectResponse(f"/ui/signers/positions?flash=Назначение для «{name}» сохранено.{tail}",
                             status_code=302)
 
 
@@ -996,7 +1009,7 @@ def signers_person(request: Request, fio: str = Form(...), position: str = Form(
                                               fio, position)
     except ValueError as exc:
         return RedirectResponse(f"/ui/signers?flash={exc}&flash_err=1", status_code=302)
-    return RedirectResponse("/ui/signers?flash=Сохранено", status_code=302)
+    return RedirectResponse("/ui/signers/people?flash=Сохранено", status_code=302)
 
 
 # Пустая привязка обязана иметь ровно те же ключи, что и строка из базы:
@@ -1008,11 +1021,11 @@ def signers_person_delete(request: Request, person_id: int):
     if used:
         where = ", ".join(used[:5]) + ("…" if len(used) > 5 else "")
         return RedirectResponse(
-            f"/ui/signers?flash=Сначала уберите его из подписей: {where}&flash_err=1",
+            f"/ui/signers/people?flash=Сначала уберите его из подписей: {where}&flash_err=1",
             status_code=302)
     store.delete_person(person_id)
     audit_log("signers_person_deleted", person_id=person_id)
-    return RedirectResponse("/ui/signers?flash=Человек удалён", status_code=302)
+    return RedirectResponse("/ui/signers/people?flash=Человек удалён", status_code=302)
 
 
 @router.get("/ui/signers/company")

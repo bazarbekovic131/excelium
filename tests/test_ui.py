@@ -524,3 +524,37 @@ def test_company_bulk_apply_without_checkboxes_changes_nothing(client):
                     data={"company": company, "utverzhdayu_slot": "", "set_name": "list_1"})
     assert "ничего не изменилось" in r.text
     assert store.company_bindings(company) == before
+
+
+def test_signers_tabs_open_separately(client):
+    """Люди, должности и наборы — отдельные страницы: листать компании
+    ради правки человека невозможно."""
+    _login(client)
+    for url, marker in (("/ui/signers", "Компании"),
+                        ("/ui/signers/sets", "Наборы согласующих"),
+                        ("/ui/signers/positions", "Должности шлюза"),
+                        ("/ui/signers/people", "Люди")):
+        r = client.get(url)
+        assert r.status_code == 200, url
+        assert marker in r.text
+        assert 'class="subnav"' in r.text
+    # на странице компаний нет ни людей, ни каталога должностей
+    companies = client.get("/ui/signers").text
+    assert "Новый человек: ФИО" not in companies
+    assert "Новая должность" not in companies
+
+
+def test_structura_choice_is_visible_in_the_table(client):
+    """Выбор из Структуры раньше показывался в таблице прочерком:
+    строки собирались только по людям справочника."""
+    _login(client)
+    store = client.app.state.signers
+    client.post("/directory/structura", headers=docv_headers(), json={"items": [
+        {"uid": "u-900", "display_name": "Табличный Т.Т.", "position": "Директор"}]})
+    store.save_binding(company="ТОО «Витрина»", object_name="", set_name="list_1",
+                       soglasovano=None,
+                       utverzhdayu={"ref": "u-900", "position": "Генеральный директор",
+                                    "company": "ТОО «Витрина»"})
+    html = client.get("/ui/signers", params={"search": "Витрина"}).text
+    assert "Табличный Т.Т." in html
+    assert "Генеральный директор" in html

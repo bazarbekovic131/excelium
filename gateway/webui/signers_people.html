@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Люди — Doc-V Gateway{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Люди</h1>
+    <span class="sub">для тех, кого нет в Структуре Doc-V</span>
+  </div>
+  <div class="head-actions">
+    <span class="chip neutral">людей: {{ people|length }}</span>
+    <form method="post" action="/ui/signers/link" style="display:inline">
+      <button class="btn ghost" data-busy="Сверяем…">Обновить ФИО из Структуры</button>
+    </form>
+  </div>
+</div>
+
+<div class="subnav">
+  <a href="/ui/signers" class="{{ 'on' if tab == 'companies' }}">Компании</a>
+  <a href="/ui/signers/sets" class="{{ 'on' if tab == 'sets' }}">Наборы согласующих</a>
+  <a href="/ui/signers/positions" class="{{ 'on' if tab == 'positions' }}">Должности шлюза</a>
+  <a href="/ui/signers/people" class="{{ 'on' if tab == 'people' }}">Люди</a>
+</div>
+
+{% if flash %}<div class="flash {{ 'err' if flash_err }}">{{ flash }}</div>{% endif %}
+
+<div class="card">
+  <div class="card-head">
+    <span class="card-title">Люди</span>
+    <span class="card-note">для тех, кого нет в Структуре Doc-V</span>
+  </div>
+  <div class="card-body">
+    <form method="post" action="/ui/signers/person" class="inline"
+          style="display:flex;gap:6px;margin-bottom:12px">
+      <input type="text" name="fio" placeholder="Новый человек: ФИО" required>
+      <input type="text" name="position" placeholder="должность">
+      <button class="btn" data-busy="…">Добавить</button>
+    </form>
+    <table>
+      <thead><tr><th>ФИО</th><th>Должность</th><th style="width:110px">Doc-V · подписей</th><th style="width:40px"></th></tr></thead>
+      <tbody>
+      {% for p in people %}
+      <tr>
+        <td colspan="4" style="padding:0">
+          <div style="display:flex;gap:6px;align-items:center;padding:6px 0">
+          <form method="post" action="/ui/signers/person" class="inline"
+                style="display:flex;gap:6px;align-items:center">
+            <input type="hidden" name="person_id" value="{{ p.id }}">
+            <input type="text" name="fio" value="{{ p.fio }}" style="max-width:230px">
+            <input type="text" name="position" value="{{ p.position }}" style="max-width:250px">
+            <span class="chip {{ 'success' if p.docv_uid else 'neutral' }}" title="{{ p.docv_uid or 'нет связи со Структурой' }}">{{ '✓' if p.docv_uid else '—' }}</span>
+            <span class="chip neutral" title="подписей держится на этом человеке">{{ people_usage.get(p.id, 0) }}</span>
+            <button class="btn ghost sm" data-busy="…" title="Сохранить">✓</button>
+          </form>
+          {% if people_usage.get(p.id, 0) %}
+          <span class="btn ghost sm" style="opacity:.4;cursor:not-allowed"
+                title="Сначала переключите {{ people_usage.get(p.id, 0) }} подписей на должность или другого человека">✕</span>
+          {% else %}
+          <form method="post" action="/ui/signers/person/delete/{{ p.id }}" class="inline"
+                style="display:inline"
+                onsubmit="return confirm('Удалить {{ p.fio }} из справочника?')">
+            <button class="btn ghost sm" title="Удалить">✕</button>
+          </form>
+          {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

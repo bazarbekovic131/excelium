@@ -264,7 +264,8 @@ class SignerStore:
                  "holders": sorted(x for x in holders if x)}
                 for (position, department), holders in sorted(grouped.items())]
 
-    def _holder(self, staff: list[dict], ref: str, dept: str) -> dict | None:
+    def _holder(self, staff: list[dict], ref: str, dept: str,
+                ctx: dict | None = None) -> dict | None:
         """Кого подставить по ссылке. Ссылкой может быть uid сотрудника —
         тогда подпись всегда от него, а ФИО обновляется вслед за Doc-V —
         либо название должности: тогда подставляется тот, кто занимает её
@@ -274,7 +275,7 @@ class SignerStore:
             return None
         dept = str(dept or "").strip()
         if ref.startswith(GW_PREFIX):
-            return self._gw_holder(staff, ref[len(GW_PREFIX):])
+            return self._gw_holder(staff, ref[len(GW_PREFIX):], ctx)
         by_uid = [p for p in staff if p["uid"] == ref]
         if by_uid:
             return by_uid[0]
@@ -290,9 +291,30 @@ class SignerStore:
                                         "holders": [p["fio"] for p in found]}})
         return sorted(found, key=lambda p: p["fio"])[0]
 
-    def _gw_holder(self, staff: list[dict], name: str) -> dict | None:
+    def _gw_holder(self, staff: list[dict], name: str,
+                   ctx: dict | None = None) -> dict | None:
         """Кого назначили на должность шлюза. Должность и есть то, что
         печатается, поэтому она же идёт в position."""
+        cached = (ctx or {}).get("gw")
+        if cached is not None:
+            row = cached.get(name)
+            if row is None:
+                log.warning("должности шлюза нет в каталоге — подпись останется пустой",
+                            extra={"data": {"position": name}})
+                return None
+            fio = ""
+            if row["holder_uid"]:
+                found = [p for p in staff if p["uid"] == row["holder_uid"]]
+                fio = found[0]["fio"] if found else ""
+            if not fio and row["holder_person_id"]:
+                fio = (ctx or {}).get("people", {}).get(row["holder_person_id"], "")
+            if not fio:
+                log.warning("на должность шлюза никто не назначен —"
+                            " подпись останется пустой",
+                            extra={"data": {"position": name}})
+                return None
+            return {"uid": row["holder_uid"], "fio": fio, "position": name,
+                    "department": ""}
         with connect(self.db_path) as conn:
             row = conn.execute("SELECT * FROM signer_positions WHERE name = ?",
                                (name,)).fetchone()
@@ -316,8 +338,18 @@ class SignerStore:
 
     # --- подбор ---------------------------------------------------------
 
+    def context(self) -> dict:
+        """Разово прочитанные Структура и каталог должностей — чтобы
+        сводная таблица на сотню строк не ходила в базу за каждой."""
+        with connect(self.db_path) as conn:
+            gw = {r["name"]: dict(r) for r in
+                  conn.execute("SELECT * FROM signer_positions")}
+            people = {r["id"]: r["fio"] for r in
+                      conn.execute("SELECT id, fio FROM signer_people")}
+        return {"staff": self.staff(), "gw": gw, "people": people}
+
     def resolve(self, company: str, object_name: str = "",
-                expense_type: str = "") -> dict:
+                expense_type: str = "", ctx: dict | None = None) -> dict:
         """-> {"soglasovano": …|None, "utverzhdayu": …|None,
                 "coordinators": [...], "source": …}."""
         company_key = normalize_name(company)
@@ -346,13 +378,16 @@ class SignerStore:
             entries = conn.execute(
                 "SELECT * FROM signer_sets WHERE name = ? ORDER BY ord",
                 (row["set_name"],)).fetchall()
-        staff = self.staff()
+        ctx = ctx or {}
+        staff = ctx.get("staff")
+        if staff is None:
+            staff = self.staff()
 
         def fio_of(person_id, ref, dept) -> tuple[str, str]:
             """-> (ФИО, должность по умолчанию). Ссылка на должность
             сильнее записанного человека: она и нужна, чтобы подпись
             менялась вместе с составом Doc-V."""
-            holder = self._holder(staff, ref, dept)
+            holder = self._holder(staff, ref, dept, ctx)
             if holder:
                 return holder["fio"], holder["position"]
             return names.get(person_id, ("", ""))
