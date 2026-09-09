@@ -34,11 +34,7 @@
       <span class="card-title" style="text-transform:none;letter-spacing:0">{{ card.company }}</span>
       <span style="display:flex;gap:8px;align-items:center">
         <span class="chip neutral">{{ card.count }}</span>
-        {% if card.company == company %}
-        <a class="btn ghost sm" href="/ui/signers">Свернуть</a>
-        {% else %}
-        <a class="btn ghost sm" href="/ui/signers?company={{ card.company|urlencode }}">Открыть</a>
-        {% endif %}
+        <a class="btn ghost sm" href="/ui/signers/company?name={{ card.company|urlencode }}">Открыть</a>
       </span>
     </div>
     <div class="card-body">
@@ -49,7 +45,7 @@
         <span>{% if card.whole.right %}{{ card.whole.right.fio }}<span class="hint"> · {{ card.whole.right.position }}</span>{% else %}—{% endif %}</span></div>
       <div class="pair"><span class="pair-key">Набор</span>
         <span><a href="/ui/signers/set/{{ card.whole.set_name }}">{{ card.whole.set_name }}</a>
-          <a class="hint" href="/ui/signers/binding/{{ card.whole.id }}">правка правила компании</a></span></div>
+          <a class="hint" href="/ui/signers/binding/{{ card.whole.id }}">правка</a></span></div>
       {% else %}
       <div class="hint">Правила на всю компанию нет — только объекты ниже.</div>
       {% endif %}

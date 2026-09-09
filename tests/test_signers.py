@@ -300,3 +300,20 @@ def test_vacant_gateway_position_signs_nobody(client):
                        utverzhdayu={**parse_slot(gw_slot("Ничей пост")),
                                     "position": "", "company": "ТОО «Ничей»"})
     assert store.resolve("ТОО «Ничей»")["utverzhdayu"] is None
+
+
+def test_object_without_own_top_inherits_company_rule(client):
+    """Объект, у которого верхний блок не задан, берёт его у компании:
+    иначе одного и того же утверждающего пришлось бы вписывать в каждый."""
+    store = client.app.state.signers
+    person = store.people()[0]
+    store.save_binding(company="ТОО «Наследство»", object_name="", set_name="list_1",
+                       soglasovano=None,
+                       utverzhdayu={"person_id": person["id"], "position": "Директор",
+                                    "company": "ТОО «Наследство»"})
+    store.save_binding(company="ТОО «Наследство»", object_name="ЖК Первый",
+                       set_name="list_2", soglasovano=None, utverzhdayu=None)
+    at_object = store.resolve("ТОО «Наследство»", "ЖК Первый")
+    assert at_object["source"] == "объект"          # правило объекта своё
+    assert at_object["utverzhdayu"]["fio"] == person["fio"]   # а подписант — от компании
+    assert at_object["utverzhdayu"]["position"] == "Директор"

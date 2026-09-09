@@ -337,6 +337,11 @@ class SignerStore:
                             extra={"data": {"company": company, "object": object_name}})
                 return {"soglasovano": None, "utverzhdayu": None,
                         "coordinators": [], "source": "нет привязки"}
+            whole = None
+            if source == "объект":
+                whole = conn.execute(
+                    "SELECT * FROM signer_bindings WHERE company_key = ?"
+                    " AND object_key = ''", (company_key,)).fetchone()
             names = self._names(conn)
             entries = conn.execute(
                 "SELECT * FROM signer_sets WHERE name = ? ORDER BY ord",
@@ -366,15 +371,18 @@ class SignerStore:
                                         entry["print_company"], entry["mark"]))
 
         def top(role: str) -> dict | None:
-            person_id = row[f"{role}_id"]
-            ref = row[f"{role}_ref"]
+            source = row
+            if not row[f"{role}_id"] and not row[f"{role}_ref"] and whole is not None:
+                source = whole   # у объекта не задано — берём правило компании
+            person_id = source[f"{role}_id"]
+            ref = source[f"{role}_ref"]
             if not person_id and not ref:
                 return None
-            fio, default_position = fio_of(person_id, ref, row[f"{role}_dept"])
+            fio, default_position = fio_of(person_id, ref, source[f"{role}_dept"])
             if not fio:
                 return None
-            return _person(fio, row[f"{role}_position"] or default_position,
-                           row[f"{role}_company"] or row["company"])
+            return _person(fio, source[f"{role}_position"] or default_position,
+                           source[f"{role}_company"] or row["company"])
 
         return {"soglasovano": top(ROLE_SOGLASOVANO),
                 "utverzhdayu": top(ROLE_UTVERZHDAYU),
@@ -529,6 +537,41 @@ class SignerStore:
                 " utverzhdayu_ref=excluded.utverzhdayu_ref,"
                 " utverzhdayu_dept=excluded.utverzhdayu_dept", values)
             return cur.lastrowid or 0
+
+    def apply_to_company(self, company: str, *, soglasovano: dict | None = None,
+                         utverzhdayu: dict | None = None,
+                         set_name: str | None = None) -> int:
+        """Проставить одно и то же во все привязки компании. Утверждающий
+        у компании один на все объекты, и правкой по одной строке это
+        занятие на полдня. None — поле не трогаем."""
+        company_key = normalize_name(company)
+        sets_sql, values = [], []
+        for role, slot in (("soglasovano", soglasovano), ("utverzhdayu", utverzhdayu)):
+            if slot is None:
+                continue
+            sets_sql += [f"{role}_id=?", f"{role}_ref=?", f"{role}_dept=?",
+                         f"{role}_position=?", f"{role}_company=?"]
+            values += [slot.get("person_id") or None, (slot.get("ref") or "").strip(),
+                       (slot.get("dept") or "").strip(),
+                       (slot.get("position") or "").strip(),
+                       (slot.get("company") or "").strip()]
+            self._remember_positions(slot.get("position"))
+        if set_name:
+            sets_sql.append("set_name=?")
+            values.append(set_name.strip())
+        if not sets_sql:
+            return 0
+        with connect(self.db_path) as conn:
+            cur = conn.execute(
+                f"UPDATE signer_bindings SET {', '.join(sets_sql)} WHERE company_key = ?",
+                (*values, company_key))
+            return cur.rowcount
+
+    def company_bindings(self, company: str) -> list[dict]:
+        with connect(self.db_path) as conn:
+            return [dict(r) for r in conn.execute(
+                "SELECT * FROM signer_bindings WHERE company_key = ?"
+                " ORDER BY object_name", (normalize_name(company),)).fetchall()]
 
     def delete_binding(self, binding_id: int) -> None:
         with connect(self.db_path) as conn:

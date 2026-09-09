@@ -487,3 +487,40 @@ def test_position_assign_and_delete_from_ui(client):
     r = client.post("/ui/signers/position", data={"delete": "Первый подписант"},
                     follow_redirects=True)
     assert "ссылаются 1 подписей" in r.text
+
+
+def test_company_bulk_apply_sets_one_signer_everywhere(client):
+    """Утверждающий у компании один на все объекты — правится разом."""
+    _login(client)
+    store = client.app.state.signers
+    company = 'ТОО "СМУ Аргон"'
+    rows = store.company_bindings(company)
+    assert len(rows) > 3, "нужна компания с несколькими объектами"
+
+    page = client.get("/ui/signers/company", params={"name": company})
+    assert page.status_code == 200 and "Применить ко всем" in page.text
+
+    person = store.people()[0]
+    r = client.post("/ui/signers/company/apply", follow_redirects=True, data={
+        "company": company, "apply_utverzhdayu": "1",
+        "utverzhdayu_slot": f"p:{person['id']}",
+        "utverzhdayu_position": "Единый директор", "utverzhdayu_company": company})
+    assert f"Проставлено в {len(rows)} привязок" in r.text
+    for row in store.company_bindings(company):
+        resolved = store.resolve(row["company"], row["object_name"])
+        assert resolved["utverzhdayu"]["fio"] == person["fio"]
+        assert resolved["utverzhdayu"]["position"] == "Единый директор"
+    # согласовано не трогали
+    assert any(store.resolve(r["company"], r["object_name"])["soglasovano"]
+               for r in store.company_bindings(company))
+
+
+def test_company_bulk_apply_without_checkboxes_changes_nothing(client):
+    _login(client)
+    store = client.app.state.signers
+    company = 'ТОО "СМУ Аргон"'
+    before = store.company_bindings(company)
+    r = client.post("/ui/signers/company/apply", follow_redirects=True,
+                    data={"company": company, "utverzhdayu_slot": "", "set_name": "list_1"})
+    assert "ничего не изменилось" in r.text
+    assert store.company_bindings(company) == before

@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import shutil
+from urllib.parse import quote
 from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Form, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
@@ -1012,6 +1013,55 @@ def signers_person_delete(request: Request, person_id: int):
     store.delete_person(person_id)
     audit_log("signers_person_deleted", person_id=person_id)
     return RedirectResponse("/ui/signers?flash=Человек удалён", status_code=302)
+
+
+@router.get("/ui/signers/company")
+def signers_company(request: Request, name: str, flash: str = "", flash_err: str = ""):
+    store = request.app.state.signers
+    rows = [r for r in _binding_rows(store) if r["company"] == name]
+    if not rows:
+        return RedirectResponse("/ui/signers?flash=Такой компании нет&flash_err=1",
+                                status_code=302)
+    # заготовка формы — правило на всю компанию, а его нет, так первая строка
+    base = next((r for r in rows if not r["object_name"]), rows[0])
+    current = {role: slot_value(base[f"{role}_ref"], base[f"{role}_dept"],
+                                base[f"{role}_id"])
+               for role in ("soglasovano", "utverzhdayu")}
+    current.update({f"{role}_{field}": base[f"{role}_{field}"]
+                    for role in ("soglasovano", "utverzhdayu")
+                    for field in ("position", "company")})
+    current["set_name"] = base["set_name"]
+    return _page(request, "signers_company.html", "signers", company=name, rows=rows,
+                 current=current, people=store.people(),
+                 positions=_position_options(store), staff=_staff_options(store),
+                 position_cards=store.position_cards(),
+                 gateway_positions=store.gateway_positions(),
+                 set_names=sorted(store.sets()), flash=flash, flash_err=bool(flash_err))
+
+
+@router.post("/ui/signers/company/apply")
+async def signers_company_apply(request: Request):
+    form = await request.form()
+    company = str(form.get("company") or "")
+    store = request.app.state.signers
+
+    def role(name: str) -> dict | None:
+        if not form.get(f"apply_{name}"):
+            return None            # поле не отмечено — не трогаем
+        return {**parse_slot(form.get(f"{name}_slot")),
+                "position": str(form.get(f"{name}_position") or ""),
+                "company": str(form.get(f"{name}_company") or "")}
+
+    changed = store.apply_to_company(
+        company, soglasovano=role("soglasovano"), utverzhdayu=role("utverzhdayu"),
+        set_name=str(form.get("set_name") or "") if form.get("apply_set") else None)
+    audit_log("signers_company_applied", company=company, bindings=changed)
+    link = f"/ui/signers/company?name={quote(company)}"
+    if not changed:
+        return RedirectResponse(f"{link}&flash=Ничего не отмечено — ничего не изменилось",
+                                status_code=302)
+    return RedirectResponse(f"{link}&flash=Проставлено в {changed} привязок",
+                            status_code=302)
 
 
 EMPTY_BINDING = {"id": None, "company": "", "object_name": "", "set_name": "",
