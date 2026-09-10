@@ -1,11 +1,11 @@
 {% extends "base.html" %}
+{% from "_bulk.html" import bulk_bar %}
 {% block title %}Хранилище файлов — Doc-V Gateway{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
     <h1>Хранилище файлов</h1>
-    <span class="sub">файлы хранятся в течение {{ ttl_hours }} часов. {{ total }}</span>
-    <span class="sub"> {{ total }} файлов. </span>
+    <span class="sub">файлы хранятся в течение {{ ttl_hours }} часов, закреплённые — бессрочно · всего {{ total }}</span>
   </div>
   <div class="head-actions">
     <form method="post" action="/ui/files/upload" enctype="multipart/form-data" class="row">
@@ -25,9 +25,16 @@
 <div class="card">
   {% if rows %}
   <form id="dlform" method="post" action="/ui/files/download_zip" data-no-lock></form>
+  {% call bulk_bar() %}
+    <button class="btn sm" form="dlform" data-busy="Собираем архив…">{{ icon('download') }}Скачать архивом</button>
+    <button class="btn sm" form="dlform" formaction="/ui/files/pin_many" name="pinned" value="1">{{ icon('pin') }}Закрепить</button>
+    <button class="btn sm" form="dlform" formaction="/ui/files/pin_many" name="pinned" value="0">Открепить</button>
+    <button class="btn danger sm" form="dlform" formaction="/ui/files/delete_many"
+            onclick="return confirm('Удалить выбранные файлы? Ссылки на них перестанут работать.')">{{ icon('trash') }}Удалить</button>
+  {% endcall %}
   <table>
     <thead><tr>
-      <th class="w-check"><input type="checkbox" id="checkall" title="Выбрать все"></th>
+      <th class="w-check"><input type="checkbox" data-check-all title="Выбрать все"></th>
       <th class="w-100"></th>
       <th>Имя</th>
       <th class="num w-100">Размер</th><th class="w-180">Создан</th><th></th>
@@ -35,18 +42,23 @@
     <tbody>
     {% for f in rows %}
     <tr>
-      <td><input type="checkbox" name="tokens" value="{{ f.token }}" form="dlform"></td>
+      <td><input type="checkbox" name="tokens" value="{{ f.token }}" form="dlform" data-check></td>
       <td>{% if f.is_image %}<img class="thumb" src="/files/{{ f.token }}" alt="">{% endif %}</td>
       <td>
         <form class="inline row" method="post" action="/ui/files/rename/{{ f.token }}">
           <input type="text" name="new_name" value="{{ f.orig_name }}" class="maxw-md">
           <button class="btn icon sm" title="Переименовать" aria-label="Переименовать" data-busy="...">{{ icon('check') }}</button>
+          {% if f.pinned %}<span class="badge info">{{ icon('pin') }}закреплён</span>{% endif %}
         </form>
         <a class="btn ghost sm mt-1" href="#" data-copy="{{ base_url }}/files/{{ f.token }}">{{ icon('copy') }}<span data-label>Копировать</span></a>
       </td>
       <td class="num mono">{{ "%.1f"|format(f.size / 1024) }} КБ</td>
       <td>{{ f.created_at|dt }}<div class="hint">{{ f.created_at|ago }}</div></td>
       <td><div class="actions">
+        <form class="inline" method="post" action="/ui/files/pin/{{ f.token }}">
+          <input type="hidden" name="pinned" value="{{ '0' if f.pinned else '1' }}">
+          <button class="btn ghost icon sm" title="{{ 'Открепить' if f.pinned else 'Закрепить — не удалять по сроку' }}"
+                  aria-label="{{ 'Открепить' if f.pinned else 'Закрепить' }}" data-busy="…">{{ icon('pin') }}</button></form>
         <a class="btn sm" href="/files/{{ f.token }}" target="_blank">{{ icon('external') }}открыть</a>
         {% if f.is_image %}
         <form class="inline" method="post" action="/ui/files/to_assets/{{ f.token }}">
@@ -60,12 +72,11 @@
     {% endfor %}
     </tbody>
   </table>
-  <div class="card-body row">
-    <button class="btn" form="dlform" data-busy="Собираем архив…">{{ icon('download') }}Скачать выбранные архивом</button>
-    {% if has_more %}
+  {% if has_more %}
+  <div class="card-body center">
     <a class="btn ghost" href="/ui/files?limit={{ next_limit }}&search={{ search }}">Показать ещё</a>
-    {% endif %}
   </div>
+  {% endif %}
   {% else %}
   <div class="empty">{% if search %}Нет результатов.{% else %}Хранилище пусто.{% endif %}</div>
   {% endif %}

@@ -76,15 +76,31 @@ class FileStore:
     def list_files(self) -> list[dict]:
         with connect(self.settings.db_path) as conn:
             rows = conn.execute(
-                "SELECT token, orig_name, suffix, created_at FROM files"
+                "SELECT token, orig_name, suffix, created_at, pinned FROM files"
                 " ORDER BY created_at DESC").fetchall()
         out = []
         for row in rows:
             path = self.files_dir / f"{row['token']}{row['suffix']}"
             out.append({"token": row["token"], "orig_name": row["orig_name"],
                         "suffix": row["suffix"], "created_at": row["created_at"],
+                        "pinned": bool(row["pinned"]),
                         "size": path.stat().st_size if path.is_file() else 0})
         return out
+
+    def set_pinned(self, tokens: list[str], pinned: bool) -> int:
+        """Закреплённый файл переживает срок хранения: бланки, эталоны,
+        резервные копии не должны исчезать через трое суток."""
+        tokens = [t for t in tokens if TOKEN_RE.fullmatch(t)]
+        if not tokens:
+            return 0
+        marks = ",".join("?" * len(tokens))
+        with connect(self.settings.db_path) as conn:
+            cur = conn.execute(f"UPDATE files SET pinned = ? WHERE token IN ({marks})",
+                               (1 if pinned else 0, *tokens))
+        return cur.rowcount
+
+    def delete_many(self, tokens: list[str]) -> int:
+        return sum(1 for t in tokens if self.delete(t))
 
     def rename(self, token: str, new_name: str) -> bool:
         """Меняет отображаемое имя (имя на диске остаётся токеном)."""
@@ -107,19 +123,19 @@ class FileStore:
         return True
 
     def sweep(self) -> int:
-        """Удаляет файлы старше TTL и осиротевшие файлы без записи."""
+        """Удаляет файлы старше TTL (кроме закреплённых) и осиротевшие файлы без записи."""
         cutoff = (
             datetime.now(timezone.utc) - timedelta(hours=self.settings.file_ttl_hours)
         ).isoformat(timespec="seconds")
         removed = 0
         with connect(self.settings.db_path) as conn:
             rows = conn.execute(
-                "SELECT token, suffix FROM files WHERE created_at < ?", (cutoff,)
-            ).fetchall()
+                "SELECT token, suffix FROM files WHERE created_at < ? AND pinned = 0",
+                (cutoff,)).fetchall()
             for row in rows:
                 (self.files_dir / f"{row['token']}{row['suffix']}").unlink(missing_ok=True)
                 removed += 1
-            conn.execute("DELETE FROM files WHERE created_at < ?", (cutoff,))
+            conn.execute("DELETE FROM files WHERE created_at < ? AND pinned = 0", (cutoff,))
             known = {r["token"] + r["suffix"] for r in conn.execute(
                 "SELECT token, suffix FROM files").fetchall()}
         for f in self.files_dir.iterdir():

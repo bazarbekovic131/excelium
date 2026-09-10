@@ -1,0 +1,11 @@
+{# Панель массовых действий над выбранными строками таблицы.
+   Появляется, когда отмечена хотя бы одна строка (JS в base.html).
+   Использование:
+     {% call bulk_bar() %}<button …>Действие</button>{% endcall %}
+   Кнопки внутри относятся к своей форме через form="…" и formaction. #}
+{% macro bulk_bar() -%}
+<div class="bulk-bar" data-bulk-bar hidden>
+  <span class="count">выбрано: <b data-bulk-count>0</b></span>
+  {{ caller() }}
+</div>
+{%- endmacro %}

@@ -289,7 +289,7 @@ def jobs_new(request: Request, type: str = Form(...), payload: str = Form(...)):
 
 @router.get("/ui/files")
 def files_page(request: Request, search: str = "", limit: int = PAGE_SIZE,
-               flash: str = ""):
+               flash: str = "", flash_err: str = ""):
     rows = request.app.state.filestore.list_files()
     needle = search.strip().lower()
     if needle:
@@ -300,7 +300,8 @@ def files_page(request: Request, search: str = "", limit: int = PAGE_SIZE,
                      for f in rows[:limit]],
                  total=total, has_more=total > limit, next_limit=limit + PAGE_SIZE,
                  search=search, base_url=request.app.state.settings.base_url,
-                 ttl_hours=request.app.state.settings.file_ttl_hours, flash=flash)
+                 ttl_hours=request.app.state.settings.file_ttl_hours, flash=flash,
+                 flash_err=bool(flash_err))
 
 
 @router.post("/ui/files/upload")
@@ -374,6 +375,38 @@ def files_delete(request: Request, token: str):
     ok = request.app.state.filestore.delete(token)
     audit_log("ui_file_deleted", token=token, ok=ok)
     return RedirectResponse("/ui/files?flash=Файл удалён", status_code=302)
+
+
+@router.post("/ui/files/delete_many")
+def files_delete_many(request: Request, tokens: list[str] = Form(default=[])):
+    if not tokens:
+        return RedirectResponse("/ui/files?flash=Ничего не выбрано&flash_err=1",
+                                status_code=302)
+    count = request.app.state.filestore.delete_many(tokens)
+    audit_log("ui_files_deleted", count=count)
+    return RedirectResponse(f"/ui/files?flash=Удалено файлов: {count}", status_code=302)
+
+
+@router.post("/ui/files/pin/{token}")
+def files_pin(request: Request, token: str, pinned: str = Form(default="1")):
+    on = pinned == "1"
+    count = request.app.state.filestore.set_pinned([token], on)
+    audit_log("ui_file_pinned", token=token, pinned=on, ok=bool(count))
+    return RedirectResponse(f"/ui/files?flash={'Закреплён' if on else 'Откреплён'}",
+                            status_code=302)
+
+
+@router.post("/ui/files/pin_many")
+def files_pin_many(request: Request, tokens: list[str] = Form(default=[]),
+                   pinned: str = Form(default="1")):
+    if not tokens:
+        return RedirectResponse("/ui/files?flash=Ничего не выбрано&flash_err=1",
+                                status_code=302)
+    on = pinned == "1"
+    count = request.app.state.filestore.set_pinned(tokens, on)
+    audit_log("ui_files_pinned", count=count, pinned=on)
+    word = "Закреплено" if on else "Откреплено"
+    return RedirectResponse(f"/ui/files?flash={word} файлов: {count}", status_code=302)
 
 
 # --- операции -------------------------------------------------------------

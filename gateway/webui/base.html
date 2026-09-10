@@ -70,12 +70,43 @@ document.addEventListener('click', function (e) {
   });
 });
 
-// Выбрать все строки таблицы.
-document.addEventListener('change', function (e) {
-  if (e.target.id !== 'checkall') return;
-  document.querySelectorAll('input[name=tokens]').forEach(function (x) {
-    x.checked = e.target.checked;
+// Выбор строк таблицы: флажок в шапке отмечает все, панель массовых
+// действий показывается, пока выбрана хоть одна строка.
+function gwRefreshSelection(table) {
+  if (!table) return;
+  const rows = table.querySelectorAll('tbody input[data-check]');
+  let n = 0;
+  rows.forEach(function (x) { if (x.checked) n++; });
+  const head = table.querySelector('thead input[data-check-all]');
+  if (head) {
+    head.checked = rows.length > 0 && n === rows.length;
+    head.indeterminate = n > 0 && n < rows.length;
+  }
+  const bar = table.dataset.bulkBar
+    ? document.getElementById(table.dataset.bulkBar)
+    : (table.closest('.card') || document).querySelector('[data-bulk-bar]');
+  if (bar) {
+    bar.hidden = n === 0;
+    bar.querySelectorAll('[data-bulk-count]').forEach(function (c) { c.textContent = n; });
+  }
+}
+function gwSelectedRows(table) {
+  return [].filter.call(table.querySelectorAll('tbody tr'), function (tr) {
+    const box = tr.querySelector('input[data-check]');
+    return box && box.checked;
   });
+}
+document.addEventListener('change', function (e) {
+  const table = e.target.closest('table');
+  if (!table) return;
+  if (e.target.matches('[data-check-all]')) {
+    table.querySelectorAll('tbody input[data-check]').forEach(function (x) {
+      x.checked = e.target.checked;
+    });
+    gwRefreshSelection(table);
+  } else if (e.target.matches('[data-check]')) {
+    gwRefreshSelection(table);
+  }
 });
 
 
@@ -143,6 +174,27 @@ document.addEventListener('input', function (e) {
       e.preventDefault();
       drop.closest('tr').remove();
       renumber();
+      gwRefreshSelection(table);
+      return;
+    }
+    // массовые действия над выбранными строками — только в браузере,
+    // строки уйдут на сервер вместе с «Сохранить»
+    const setter = e.target.closest('[data-rows-set]');
+    if (setter) {
+      e.preventDefault();
+      gwSelectedRows(table).forEach(function (tr) {
+        const field = tr.querySelector('[name="' + setter.dataset.rowsSet + '"]');
+        if (field) field.value = setter.dataset.rowsValue;
+        tr.classList.toggle('off', setter.dataset.rowsValue === '0');
+      });
+      return;
+    }
+    const dropAll = e.target.closest('[data-rows-drop]');
+    if (dropAll) {
+      e.preventDefault();
+      gwSelectedRows(table).forEach(function (tr) { tr.remove(); });
+      renumber();
+      gwRefreshSelection(table);
       return;
     }
     const move = e.target.closest('[data-move-row]');

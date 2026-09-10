@@ -251,6 +251,16 @@ pre.out {
 form.inline { display:inline; }
 .thumb { height:40px; max-width:90px; object-fit:contain; background:var(--bg-canvas); border:1px solid var(--border); border-radius:var(--radius); }
 
+/* ── Панель массовых действий ──────────────────────────── */
+.bulk-bar {
+  display:flex; align-items:center; gap:var(--sp-2); flex-wrap:wrap;
+  padding:var(--sp-2) var(--sp-4); background:var(--accent-subtle);
+  border-bottom:1px solid var(--accent-border);
+}
+.bulk-bar[hidden] { display:none; }
+tr.off td { color:var(--fg-muted); }
+tr.off td b { font-weight:400; }
+
 /* ── Утилиты ───────────────────────────────────────────── */
 .row { display:flex; align-items:center; gap:var(--sp-2); }
 .row.wrap { flex-wrap:wrap; }

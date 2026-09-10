@@ -319,7 +319,7 @@ def test_jobs_search_and_payload_visible(client):
     assert "тест" in by_producer and "оплата" not in by_producer
     # поиск по содержимому payload
     assert "оплата" in client.get("/ui/jobs?search=KZ12").text
-    assert "Ничего не нашлось" in client.get("/ui/jobs?search=неттакого").text
+    assert "Нет работ по заданному фильтру" in client.get("/ui/jobs?search=неттакого").text
 
 
 def test_files_search_and_paging(client):
@@ -331,7 +331,7 @@ def test_files_search_and_paging(client):
 
     page = client.get("/ui/files").text
     assert "Показать ещё" in page              # постранично, а не всё сразу
-    assert page.count("копировать ссылку") == 50
+    assert page.count("<span data-label>Копировать</span>") == 50
     assert "всего 56" in page
 
     found = client.get("/ui/files?search=реестр").text
@@ -374,7 +374,7 @@ def test_rule_edit_roundtrip(client):
     assert resolved["utverzhdayu"]["fio"] and resolved["coordinators"]
     rule = next(b for b in store.rules() if b["company"] == "ТОО «Новая»")
     page = client.get(f"/ui/signers/rule/{rule['id']}")
-    assert page.status_code == 200 and "Как это ляжет в реестр" in page.text
+    assert page.status_code == 200 and "Предпросмотр таблицы согласования" in page.text
     client.post(f"/ui/signers/rule/delete/{rule['id']}", follow_redirects=False)
     assert store.resolve("ТОО «Новая»")["utverzhdayu"] is None
 
@@ -503,3 +503,29 @@ def test_every_page_renders_clean(client):
             assert var not in r.text, (url, var)
         # CSS вклеен как есть: кавычки в font-стеке не экранированы
         assert '"Segoe UI"' in r.text and "&#34;Segoe UI" not in r.text, url
+
+
+def test_files_bulk_delete_and_pin(client):
+    _login(client)
+    store = client.app.state.filestore
+    tokens = [store.save_bytes(b"x", ".txt", f"f{i}.txt") for i in range(3)]
+    r = client.post("/ui/files/delete_many", data={"tokens": tokens[:2]}, follow_redirects=True)
+    assert "Удалено файлов: 2" in r.text
+    assert [f["token"] for f in store.list_files()] == [tokens[2]]
+    r = client.post("/ui/files/pin_many", data={"tokens": [tokens[2]], "pinned": "1"},
+                    follow_redirects=True)
+    assert "Закреплено файлов: 1" in r.text and "закреплён" in r.text
+    assert store.list_files()[0]["pinned"] is True
+    r = client.post("/ui/files/pin/" + tokens[2], data={"pinned": "0"}, follow_redirects=True)
+    assert "Откреплён" in r.text and store.list_files()[0]["pinned"] is False
+    r = client.post("/ui/files/delete_many", data={}, follow_redirects=True)
+    assert "Ничего не выбрано" in r.text
+
+
+def test_files_page_has_generic_selection(client):
+    _login(client)
+    client.app.state.filestore.save_bytes(b"x", ".txt", "a.txt")
+    html = client.get("/ui/files").text
+    assert "data-check-all" in html and 'name="tokens" value=' in html and "data-check" in html
+    assert "data-bulk-bar" in html and "data-bulk-count" in html
+    assert 'formaction="/ui/files/delete_many"' in html

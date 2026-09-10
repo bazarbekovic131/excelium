@@ -8,7 +8,7 @@
   <select name="holder_uid">
     <option value="">Отсутствует</option>
     {% for p in staff %}
-    <option value="{{ p.uid }}" {{ 'selected' if p.uid == selected }}>{{ p.fio }}{% if p.position %}( {{ p.position }} ){% endif %}{% if p.department %}/{{ p.department }}{% endif %}</option>
+    <option value="{{ p.uid }}" {{ 'selected' if p.uid == selected }}>{{ p.fio }}{% if p.position %} ({{ p.position }}){% endif %}{% if p.department %} / {{ p.department }}{% endif %}</option>
     {% endfor %}
   </select>
 </div>
@@ -40,7 +40,7 @@
   <table id="rowlist">
     <thead><tr>
       <th class="w-40">№</th>
-      <th class="w-300">Должность <span class="hint">ключ</span></th>
+      <th class="w-300">Идентификатор</th>
       <th class="w-220">Отображаемое значение</th>
       <th>Сотрудник</th>
       <th class="w-180">Ручное значение (опц.)</th>

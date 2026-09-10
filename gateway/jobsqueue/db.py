@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS files (
   token TEXT PRIMARY KEY,
   orig_name TEXT NOT NULL,
   suffix TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  pinned INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS typst_templates (
   name TEXT PRIMARY KEY,
@@ -57,6 +58,7 @@ CREATE TABLE IF NOT EXISTS signer_roles (
   title TEXT NOT NULL DEFAULT '',
   holder_uid TEXT NOT NULL DEFAULT '',
   holder_name TEXT NOT NULL DEFAULT '',
+  enabled INTEGER NOT NULL DEFAULT 1,
   updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS signer_set_lines (
@@ -66,6 +68,7 @@ CREATE TABLE IF NOT EXISTS signer_set_lines (
   print_company TEXT NOT NULL DEFAULT '',
   mark TEXT NOT NULL DEFAULT '',
   skip_expense_types TEXT NOT NULL DEFAULT '',
+  enabled INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY (set_name, ord)
 );
 CREATE TABLE IF NOT EXISTS signer_rules (
@@ -79,8 +82,25 @@ CREATE TABLE IF NOT EXISTS signer_rules (
   soglasovano_company TEXT NOT NULL DEFAULT '',
   utverzhdayu_role TEXT NOT NULL DEFAULT '',
   utverzhdayu_company TEXT NOT NULL DEFAULT '',
+  enabled INTEGER NOT NULL DEFAULT 1,
   UNIQUE (company_key, object_key)
 );
+CREATE TABLE IF NOT EXISTS ops_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  op TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'ui',
+  params_json TEXT NOT NULL DEFAULT '{}',
+  ok INTEGER NOT NULL,
+  exit_code INTEGER NOT NULL,
+  duration_ms INTEGER NOT NULL,
+  stdout TEXT NOT NULL DEFAULT '',
+  stderr TEXT NOT NULL DEFAULT '',
+  error TEXT NOT NULL DEFAULT '',
+  files_json TEXT NOT NULL DEFAULT '[]',
+  started_at TEXT NOT NULL,
+  ip TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS ix_ops_runs_op ON ops_runs(op, id);
 CREATE TABLE IF NOT EXISTS heartbeat (
   kind TEXT PRIMARY KEY,
   seen_at TEXT NOT NULL
@@ -98,8 +118,23 @@ def connect(path: Path) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
+# Колонки, добавленные после первого выпуска: на сервере база уже есть,
+# и CREATE TABLE IF NOT EXISTS их не заведёт — дописываем на месте.
+_ADDED_COLUMNS = {
+    "files": [("pinned", "INTEGER NOT NULL DEFAULT 0")],
+    "signer_roles": [("enabled", "INTEGER NOT NULL DEFAULT 1")],
+    "signer_set_lines": [("enabled", "INTEGER NOT NULL DEFAULT 1")],
+    "signer_rules": [("enabled", "INTEGER NOT NULL DEFAULT 1")],
+}
+
+
 def init_db(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with connect(path) as conn:
         conn.executescript(_SCHEMA)
+        for table, columns in _ADDED_COLUMNS.items():
+            have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+            for name, decl in columns:
+                if name not in have:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
     path.chmod(0o600)
