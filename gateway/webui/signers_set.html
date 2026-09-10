@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_signers_nav.html" import nav, role_picker %}
+{% from "_bulk.html" import bulk_bar %}
 {% block title %}Набор {{ name }} — Doc-V Gateway{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -19,20 +20,34 @@
 <div class="card">
   <div class="card-head">
     <span class="card-title">Таблица</span>
+    <span class="card-note">Выключенная строка остаётся в наборе, но в реестр не печатается. Изменения уходят на сервер кнопкой «Сохранить набор».</span>
   </div>
+  {# действия над выбранными строками выполняются в браузере: строки ещё не сохранены #}
+  {% call bulk_bar() %}
+    <button type="button" class="btn sm" data-rows-set="enabled" data-rows-value="0">{{ icon('eye-off') }}Не печатать</button>
+    <button type="button" class="btn sm" data-rows-set="enabled" data-rows-value="1">{{ icon('eye') }}Печатать</button>
+    <button type="button" class="btn danger sm" data-rows-drop>{{ icon('trash') }}Убрать</button>
+  {% endcall %}
   <table id="rowlist">
     <thead><tr>
-      <th class="w-40">№</th><th class="w-360">Должность</th>
+      <th class="w-check"><input type="checkbox" data-check-all title="Выбрать все"></th>
+      <th class="w-40">№</th><th class="w-300">Должность</th>
+      <th class="w-100">Печатать</th>
       <th>Компания сотрудника</th><th class="w-150">Заголовок над подписантом</th>
       <th class="w-180">Пропустить при перечисленных затратах</th>
       <th class="w-100"></th>
     </tr></thead>
     <tbody>
     {% for row in rows %}
-    <tr>
+    <tr class="{{ 'off' if not row.enabled }}">
+      <td><input type="checkbox" data-check></td>
       <td class="muted" data-num>{{ loop.index }}</td>
       <td>{{ role_picker('role', roles, row.role, empty='Убрать строку') }}
         {% if row.missing %}<span class="badge danger">должности «{{ row.role }}» больше нет</span>{% endif %}</td>
+      <td><select name="enabled">
+        <option value="1" {{ 'selected' if row.enabled }}>да</option>
+        <option value="0" {{ 'selected' if not row.enabled }}>нет</option>
+      </select></td>
       <td><input type="text" name="print_company" value="{{ row.print_company }}"></td>
       <td><input type="text" name="mark" value="{{ row.mark }}"></td>
       <td><input type="text" name="skip_expense_types" value="{{ row.skip_expense_types }}"></td>
@@ -65,8 +80,10 @@
 
 <template id="row-template">
   <tr>
+    <td><input type="checkbox" data-check></td>
     <td class="muted" data-num></td>
     <td>{{ role_picker('role', roles, '', empty='Выберите должность') }}</td>
+    <td><select name="enabled"><option value="1">да</option><option value="0">нет</option></select></td>
     <td><input type="text" name="print_company"></td>
     <td><input type="text" name="mark"></td>
     <td><input type="text" name="skip_expense_types"></td>

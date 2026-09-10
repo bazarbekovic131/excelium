@@ -12,7 +12,7 @@
   <select name="{{ field }}">
     <option value="">{{ empty }}</option>
     {% for r in roles %}
-    <option value="{{ r.name }}" {{ 'selected' if r.name == selected }}>{{ r.holder }} ({{ r.title or 'Пусто' }})</option>
+    <option value="{{ r.name }}" {{ 'selected' if r.name == selected }}>{{ r.holder or 'вакантна' }} ({{ r.title or 'Пусто' }}){% if not r.enabled %} — отключена{% endif %}</option>
     {% endfor %}
   </select>
 </div>

@@ -529,3 +529,76 @@ def test_files_page_has_generic_selection(client):
     assert "data-check-all" in html and 'name="tokens" value=' in html and "data-check" in html
     assert "data-bulk-bar" in html and "data-bulk-count" in html
     assert 'formaction="/ui/files/delete_many"' in html
+
+
+def test_roles_bulk_disable_and_guarded_delete(client):
+    _login(client)
+    store = client.app.state.signers
+    used = next(r["name"] for r in store.roles() if r["used"])
+    store.save_role("Временная", holder_name="Временный В.В.")
+    r = client.post("/ui/signers/roles/bulk", follow_redirects=True,
+                    data={"names": [used, "Временная"], "action": "disable"})
+    assert "Отключено должностей: 2" in r.text and "отключена" in r.text
+    assert not next(x for x in store.roles() if x["name"] == used)["enabled"]
+    r = client.post("/ui/signers/roles/bulk", follow_redirects=True,
+                    data={"names": [used, "Временная"], "action": "delete"})
+    assert "Убрано: 1" in r.text and "Пропущено (ссылаются подписи)" in r.text
+    r = client.post("/ui/signers/roles/bulk", follow_redirects=True,
+                    data={"names": [used], "action": "enable"})
+    assert "Включено должностей: 1" in r.text
+    assert "data-bulk-bar" in client.get("/ui/signers/roles").text
+
+
+def test_rules_bulk_apply_to_selected_only(client):
+    _login(client)
+    store = client.app.state.signers
+    company = 'ТОО "СМУ Аргон"'
+    rules = store.company_rules(company)
+    store.save_role("Выборочный", holder_name="Выборочный В.В.")
+    chosen = [str(r["id"]) for r in rules[:2]]
+    r = client.post("/ui/signers/company/apply", follow_redirects=True, data={
+        "company": company, "action": "apply", "ids": chosen, "apply_utverzhdayu": "1",
+        "utverzhdayu_role": "Выборочный", "utverzhdayu_company": company})
+    assert "Проставлено в 2 правил" in r.text
+    r = client.post("/ui/signers/company/apply", follow_redirects=True, data={
+        "company": company, "action": "disable", "ids": chosen})
+    assert "Отключено правил: 2" in r.text and "отключено" in r.text
+    r = client.post("/ui/signers/company/apply", follow_redirects=True, data={
+        "company": company, "action": "delete", "ids": chosen[:1]})
+    assert "Удалено правил: 1" in r.text
+    assert len(store.company_rules(company)) == len(rules) - 1
+
+
+def test_set_editor_enabled_column_roundtrip(client):
+    _login(client)
+    store = client.app.state.signers
+    before = store.sets()["list_1"]
+    data = {"role": [e["role"] for e in before],
+            "print_company": [e["print_company"] for e in before],
+            "mark": [e["mark"] for e in before],
+            "skip_expense_types": [e["skip_expense_types"] for e in before],
+            "enabled": ["0"] + ["1"] * (len(before) - 1)}
+    client.post("/ui/signers/set/list_1/save", data=data, follow_redirects=False)
+    after = store.sets()["list_1"]
+    assert after[0]["enabled"] == 0 and all(e["enabled"] == 1 for e in after[1:])
+    html = client.get("/ui/signers/set/list_1").text
+    assert 'data-rows-set="enabled"' in html and "data-rows-drop" in html
+    assert html.count('name="enabled"') >= len(after)
+
+
+def test_rule_form_enabled_checkbox(client):
+    _login(client)
+    store = client.app.state.signers
+    role = store.roles()[0]["name"]
+    client.post("/ui/signers/rule/save", follow_redirects=False, data={
+        "rule_id": "", "company": "ТОО «Флажок»", "object_name": "", "set_name": "list_1",
+        "utverzhdayu_role": role, "enabled": ["0"]})   # флажок снят: только скрытое поле
+    rule = next(r for r in store.rules() if r["company"] == "ТОО «Флажок»")
+    assert not rule["enabled"]
+    assert store.resolve("ТОО «Флажок»", "Любой объект")["source"] == "нет правила"
+    page = client.get(f"/ui/signers/rule/{rule['id']}").text
+    assert "Правило действует" in page
+    client.post("/ui/signers/rule/save", follow_redirects=False, data={
+        "rule_id": str(rule["id"]), "company": "ТОО «Флажок»", "object_name": "",
+        "set_name": "list_1", "utverzhdayu_role": role, "enabled": ["0", "1"]})
+    assert store.resolve("ТОО «Флажок»", "Любой объект")["source"] == "компания"

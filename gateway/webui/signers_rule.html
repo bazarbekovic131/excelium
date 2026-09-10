@@ -56,6 +56,16 @@
       </div>
       {% endfor %}
 
+      {# скрытое поле идёт первым: флажок без отметки не отправляется вовсе,
+         сервер берёт последнее значение #}
+      <div class="field-group">
+        <input type="hidden" name="enabled" value="0">
+        <label class="check">
+          <input type="checkbox" name="enabled" value="1" {{ 'checked' if rule.enabled }}>
+          Правило действует
+          <span class="hint">{% if rule.object_name %}отключённое правило объекта уступает правилу компании{% else %}отключённое правило компании — как будто его нет{% endif %}</span>
+        </label>
+      </div>
       <div class="form-actions">
         <button class="btn primary" data-busy="Сохраняем…">Сохранить</button>
         <a class="hint" href="/ui/signers/roles">Нет нужной должности? Заведите новую должность на вкладке «Должности».</a>

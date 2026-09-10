@@ -30,7 +30,7 @@
     <div class="card-body">
       {% for line in lines %}
       <div class="pair"><span class="pair-key">{{ loop.index }}.</span>
-        <span>{{ line.holder or '—' }}<span class="hint"> {{ line.title }}{% if line.print_company %} {{ line.print_company }}{% endif %}</span></span></div>
+        <span>{{ line.holder or '—' }}<span class="hint"> {{ line.title }}{% if line.print_company %} {{ line.print_company }}{% endif %}</span>{% if not line.enabled %} <span class="badge warn">не печатается</span>{% endif %}</span></div>
       {% else %}
       <div class="hint">Пусто</div>
       {% endfor %}

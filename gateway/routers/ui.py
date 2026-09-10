@@ -998,11 +998,28 @@ async def signers_company_apply(request: Request):
         return {"role": str(form.get(f"{name}_role") or ""),
                 "company": str(form.get(f"{name}_company") or "")}
 
+    link = f"/ui/signers/company?name={quote(company)}"
+    action = str(form.get("action") or "apply")
+    ids = [int(x) for x in form.getlist("ids") if str(x).isdigit()]
+    if action in ("enable", "disable", "delete"):
+        if not ids:
+            return RedirectResponse(f"{link}&flash=Ничего не выбрано&flash_err=1",
+                                    status_code=302)
+        if action == "delete":
+            count = store.delete_rules(ids)
+            audit_log("signers_rules_deleted", company=company, count=count)
+            return RedirectResponse(f"{link}&flash=Удалено правил: {count}", status_code=302)
+        count = store.set_rules_enabled(ids, action == "enable")
+        audit_log("signers_rules_toggled", company=company, count=count,
+                  enabled=action == "enable")
+        word = "Включено" if action == "enable" else "Отключено"
+        return RedirectResponse(f"{link}&flash={word} правил: {count}", status_code=302)
+
     changed = store.apply_to_company(
         company, soglasovano=slot("soglasovano"), utverzhdayu=slot("utverzhdayu"),
-        set_name=str(form.get("set_name") or "") if form.get("apply_set") else None)
+        set_name=str(form.get("set_name") or "") if form.get("apply_set") else None,
+        rule_ids=ids or None)
     audit_log("signers_company_applied", company=company, rules=changed)
-    link = f"/ui/signers/company?name={quote(company)}"
     if not changed:
         return RedirectResponse(f"{link}&flash=Ничего не отмечено — ничего не изменилось",
                                 status_code=302)
@@ -1011,7 +1028,7 @@ async def signers_company_apply(request: Request):
 
 EMPTY_RULE = {"id": None, "company": "", "object_name": "", "set_name": "",
               "soglasovano_role": "", "soglasovano_company": "",
-              "utverzhdayu_role": "", "utverzhdayu_company": ""}
+              "utverzhdayu_role": "", "utverzhdayu_company": "", "enabled": 1}
 
 
 @router.get("/ui/signers/rule/{rule_id}")
@@ -1048,7 +1065,8 @@ async def signers_rule_save(request: Request):
             soglasovano_company=str(form.get("soglasovano_company") or ""),
             utverzhdayu=str(form.get("utverzhdayu_role") or ""),
             utverzhdayu_company=str(form.get("utverzhdayu_company") or ""),
-            rule_id=int(raw_id) if raw_id else None)
+            rule_id=int(raw_id) if raw_id else None,
+            enabled=(form.getlist("enabled") or ["1"])[-1] == "1")
     except ValueError as exc:
         return RedirectResponse(f"/ui/signers?flash={exc}&flash_err=1", status_code=302)
     audit_log("signers_rule_saved", company=company)
@@ -1109,8 +1127,10 @@ async def signers_set_save(request: Request, name: str):
     companies = form.getlist("print_company")
     marks = form.getlist("mark")
     skips = form.getlist("skip_expense_types")
+    flags = form.getlist("enabled")   # нет поля — строка печатается
     lines = [{"role": roles[i], "company": companies[i], "mark": marks[i],
-              "skip_expense_types": skips[i]} for i in range(len(roles))]
+              "skip_expense_types": skips[i],
+              "enabled": flags[i] if i < len(flags) else "1"} for i in range(len(roles))]
     try:
         count = request.app.state.signers.save_set(name, lines)
     except ValueError as exc:
@@ -1172,6 +1192,35 @@ async def signers_roles_save(request: Request):
     audit_log("signers_roles_saved", saved=saved, renamed=renamed)
     tail = f", переименовано {renamed}" if renamed else ""
     return RedirectResponse(f"/ui/signers/roles?flash=Сохранено должностей: {saved}{tail}",
+                            status_code=302)
+
+
+@router.post("/ui/signers/roles/bulk")
+async def signers_roles_bulk(request: Request):
+    """Выбранные должности: отключить («в отпуске»), включить, удалить."""
+    form = await request.form()
+    store = request.app.state.signers
+    names = [str(n) for n in form.getlist("names") if str(n).strip()]
+    action = str(form.get("action") or "")
+    if not names:
+        return RedirectResponse("/ui/signers/roles?flash=Ничего не выбрано&flash_err=1",
+                                status_code=302)
+    if action == "delete":
+        deleted, skipped = store.delete_roles(names)
+        audit_log("signers_roles_deleted", count=deleted, skipped=skipped)
+        flash = f"Убрано: {deleted}"
+        if skipped:
+            flash += ". Пропущено (ссылаются подписи): " + ", ".join(skipped[:5]) \
+                + ("…" if len(skipped) > 5 else "")
+        return RedirectResponse(f"/ui/signers/roles?flash={flash}"
+                                f"{'&flash_err=1' if skipped else ''}", status_code=302)
+    if action in ("enable", "disable"):
+        count = store.set_roles_enabled(names, action == "enable")
+        audit_log("signers_roles_toggled", count=count, enabled=action == "enable")
+        word = "Включено" if action == "enable" else "Отключено"
+        return RedirectResponse(f"/ui/signers/roles?flash={word} должностей: {count}",
+                                status_code=302)
+    return RedirectResponse("/ui/signers/roles?flash=Неизвестное действие&flash_err=1",
                             status_code=302)
 
 

@@ -65,9 +65,9 @@
     </tr></thead>
     <tbody>
     {% for b in rules %}
-    <tr>
+    <tr class="{{ 'off' if not b.enabled }}">
       <td>{{ b.company }}</td>
-      <td>{{ b.object_name or "— вся компания" }}</td>
+      <td>{{ b.object_name or "— вся компания" }}{% if not b.enabled %} <span class="badge warn">отключено</span>{% endif %}</td>
       <td>{% if b.left %}<b>{{ b.left.fio }}</b><br><span class="hint">{{ b.left.position }} {{ b.left.company }}</span>{% else %}—{% endif %}</td>
       <td>{% if b.right %}<b>{{ b.right.fio }}</b><br><span class="hint">{{ b.right.position }} {{ b.right.company }}</span>{% else %}—{% endif %}</td>
       <td><a href="/ui/signers/set/{{ b.set_name|urlencode }}">{{ b.set_name }}</a></td>

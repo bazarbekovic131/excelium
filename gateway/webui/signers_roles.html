@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_signers_nav.html" import nav %}
+{% from "_bulk.html" import bulk_bar %}
 {% block title %}Должности — Doc-V Gateway{% endblock %}
 
 {% macro holder_picker(selected) -%}
@@ -18,7 +19,7 @@
 <div class="page-head">
   <div>
     <h1>Должности</h1>
-    <span class="sub">Реестрный спецификатор должности подписанта. Добавлено {{ roles|length }} должностей, из них вакантных {{ stats.vacant }}</span>
+    <span class="sub">Реестрный спецификатор должности подписанта. Добавлено {{ roles|length }} должностей, из них вакантных {{ stats.vacant }}{% if stats.disabled_roles %}, отключённых {{ stats.disabled_roles }}{% endif %}</span>
   </div>
   <div class="head-actions">
     <span class="count">в Структуре: {{ staff|length }} сотрудников</span>
@@ -31,14 +32,25 @@
 
 {{ nav(tab) }}
 
+{# Массовые действия идут отдельной формой: строки таблицы относятся к
+   ней через form="rolesbulk", а сама таблица остаётся внутри формы сохранения. #}
+<form id="rolesbulk" method="post" action="/ui/signers/roles/bulk" data-no-lock></form>
+
 <form method="post" action="/ui/signers/roles/save" id="rolesform">
 <div class="card">
   <div class="card-head">
     <span class="card-title">Каталог</span>
-    <span class="card-note">У каждой должности может быть только один человек.</span>
+    <span class="card-note">У каждой должности может быть только один человек. Отключённая должность нигде не подписывает, пока её не включат.</span>
   </div>
+  {% call bulk_bar() %}
+    <button class="btn sm" form="rolesbulk" name="action" value="disable">{{ icon('eye-off') }}Отключить</button>
+    <button class="btn sm" form="rolesbulk" name="action" value="enable">{{ icon('eye') }}Включить</button>
+    <button class="btn danger sm" form="rolesbulk" name="action" value="delete"
+            onclick="return confirm('Удалить выбранные должности? Используемые будут пропущены. Несохранённые правки пропадут.')">{{ icon('trash') }}Удалить</button>
+  {% endcall %}
   <table id="rowlist">
     <thead><tr>
+      <th class="w-check"><input type="checkbox" data-check-all title="Выбрать все"></th>
       <th class="w-40">№</th>
       <th class="w-300">Идентификатор</th>
       <th class="w-220">Отображаемое значение</th>
@@ -49,14 +61,16 @@
     </tr></thead>
     <tbody>
     {% for r in roles %}
-    <tr>
+    <tr class="{{ 'off' if not r.enabled }}">
+      <td><input type="checkbox" name="names" value="{{ r.name }}" form="rolesbulk" data-check></td>
       <td class="muted" data-num>{{ loop.index }}</td>
-      
       <td>
+        {# прежнее имя нужно серверу, чтобы отличить переименование от новой должности #}
+        <input type="hidden" name="old_name" value="{{ r.name }}">
         <input type="text" name="name" value="{{ r.name }}" required>
+        {% if not r.enabled %}<span class="badge warn mt-1">{{ icon('eye-off') }}отключена</span>{% endif %}
         {% if r.vacant %}<span class="badge warn mt-1">вакантна</span>{% endif %}
       </td>
-
       <td><input type="text" name="title" value="{{ r.title if r.title != r.name else '' }}" placeholder="{{ r.name }}"></td>
       <td>{{ holder_picker(r.holder_uid) }}
         {% if r.holder_uid and not r.in_structura %}<span class="badge danger mt-1">uid не найден в Структуре</span>{% endif %}
@@ -88,8 +102,10 @@
 
 <template id="row-template">
   <tr>
+    <td></td>
     <td class="muted" data-num></td>
-    <td><input type="text" name="name" placeholder="Ключ должности (уникальный)"></td>
+    <td><input type="hidden" name="old_name" value="">
+      <input type="text" name="name" placeholder="Ключ должности (уникальный)"></td>
     <td><input type="text" name="title" placeholder="Начальник подразделения"></td>
     <td>{{ holder_picker('') }}</td>
     <td><input type="text" name="holder_name" placeholder="Фамилия И.О."></td>

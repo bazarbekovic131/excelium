@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_signers_nav.html" import nav, role_picker %}
+{% from "_bulk.html" import bulk_bar %}
 {% block title %}{{ company }} — подписанты{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -15,12 +16,16 @@
 
 {{ nav(tab) }}
 
+{# Одна форма на всё: применение к выбранным правилам (или ко всем, если ничего
+   не выбрано), включение, отключение и удаление выбранных. Строки таблицы
+   ниже относятся к ней через form="applyform". #}
 <div class="card">
   <div class="card-head">
-    <span class="card-title">Проставить во все правила по компании</span>
+    <span class="card-title">Проставить в правила компании</span>
+    <span class="card-note">Без выбора строк — во все правила; с выбором — только в отмеченные.</span>
   </div>
   <div class="card-body">
-    <form method="post" action="/ui/signers/company/apply">
+    <form method="post" action="/ui/signers/company/apply" id="applyform">
       <input type="hidden" name="company" value="{{ company }}">
       {% for role, title in (('utverzhdayu', 'УТВЕРЖДАЮ — правый титул'), ('soglasovano', 'СОГЛАСОВАНО — левый титул')) %}
       <div class="{{ 'field-group' if not loop.first }}">
@@ -47,7 +52,7 @@
         </select>
       </div>
       <div class="form-actions">
-        <button class="btn primary" data-busy="Применяем…">Применить ко всем {{ rules|length }}</button>
+        <button class="btn primary" name="action" value="apply" data-busy="Применяем…">Применить ко всем {{ rules|length }}</button>
       </div>
     </form>
   </div>
@@ -56,18 +61,29 @@
 <div class="card">
   <div class="card-head">
     <span class="card-title">Правила компании</span>
+    <span class="card-note">Отключённое правило объекта уступает правилу компании.</span>
   </div>
+  {% call bulk_bar() %}
+    <button class="btn sm" form="applyform" name="action" value="apply" data-busy="Применяем…">Проставить отмеченное в выбранные</button>
+    <button class="btn sm" form="applyform" name="action" value="disable">{{ icon('eye-off') }}Отключить</button>
+    <button class="btn sm" form="applyform" name="action" value="enable">{{ icon('eye') }}Включить</button>
+    <button class="btn danger sm" form="applyform" name="action" value="delete"
+            onclick="return confirm('Удалить выбранные правила? Реестры по ним выйдут без подписей.')">{{ icon('trash') }}Удалить</button>
+  {% endcall %}
   <table>
     <thead><tr>
+      <th class="w-check"><input type="checkbox" data-check-all title="Выбрать все"></th>
       <th>Объект</th><th>Согласовано</th><th>Утверждаю</th>
       <th class="w-120">Набор</th><th class="w-80"></th>
     </tr></thead>
     <tbody>
     {% for b in rules %}
-    <tr>
-      <td>{{ b.object_name or "Правило по умолчанию" }}</td>
-      <td>{% if b.left %}<b>{{ b.left.fio }}</b><br><span class="hint">{{ b.left.position }}</span>{% else %}{% endif %}</td>
-      <td>{% if b.right %}<b>{{ b.right.fio }}</b><br><span class="hint">{{ b.right.position }}</span>{% else %}{% endif %}</td>
+    <tr class="{{ 'off' if not b.enabled }}">
+      <td><input type="checkbox" name="ids" value="{{ b.id }}" form="applyform" data-check></td>
+      <td>{{ b.object_name or "Правило по умолчанию" }}
+        {% if not b.enabled %}<span class="badge warn">отключено</span>{% endif %}</td>
+      <td>{% if b.left %}<b>{{ b.left.fio }}</b><br><span class="hint">{{ b.left.position }}</span>{% endif %}</td>
+      <td>{% if b.right %}<b>{{ b.right.fio }}</b><br><span class="hint">{{ b.right.position }}</span>{% endif %}</td>
       <td><a href="/ui/signers/set/{{ b.set_name|urlencode }}">{{ b.set_name }}</a></td>
       <td><a class="btn ghost sm" href="/ui/signers/rule/{{ b.id }}">{{ icon('pencil') }}Правка</a></td>
     </tr>

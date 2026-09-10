@@ -331,3 +331,82 @@ def test_legacy_tables_migrate_into_roles(tmp_path):
     assert roles["Юрист"]["holder_uid"] == "u-str"
     # повторный запуск ничего не ломает
     assert store.migrate_legacy() == 0
+
+
+# --- выключатели ------------------------------------------------------------
+
+def test_disabled_role_falls_back_to_company_rule(client):
+    store = client.app.state.signers
+    store.save_role("Директор компании", title="Директор", holder_name="Компанейский К.К.")
+    store.save_role("Директор объекта", title="Директор", holder_name="Объектный О.О.")
+    store.save_rule(company="ТОО «Отпуск»", object_name="", set_name="list_1",
+                    utverzhdayu="Директор компании")
+    store.save_rule(company="ТОО «Отпуск»", object_name="Стройка", set_name="list_1",
+                    utverzhdayu="Директор объекта")
+    assert store.resolve("ТОО «Отпуск»", "Стройка")["utverzhdayu"]["fio"] == "Объектный О.О."
+    store.set_roles_enabled(["Директор объекта"], False)
+    assert store.resolve("ТОО «Отпуск»", "Стройка")["utverzhdayu"]["fio"] == "Компанейский К.К."
+    store.set_roles_enabled(["Директор компании"], False)
+    assert store.resolve("ТОО «Отпуск»", "Стройка")["utverzhdayu"] is None
+    store.set_roles_enabled(["Директор объекта", "Директор компании"], True)
+    assert store.resolve("ТОО «Отпуск»", "Стройка")["utverzhdayu"]["fio"] == "Объектный О.О."
+
+
+def test_disabled_set_line_is_skipped(client):
+    store = client.app.state.signers
+    lines = [{"role": e["role"], "company": e["print_company"], "mark": e["mark"],
+              "skip_expense_types": e["skip_expense_types"], "enabled": "1"}
+             for e in store.sets()["list_1"]]
+    before = store.resolve("ТОО «Шар-Кұрылыс»", "Администрация")["coordinators"]
+    lines[0]["enabled"] = "0"
+    store.save_set("list_1", lines)
+    after = store.resolve("ТОО «Шар-Кұрылыс»", "Администрация")["coordinators"]
+    assert len(after) == len(before) - 1 and after[0] == before[1]
+    assert store.sets()["list_1"][0]["enabled"] == 0   # строка на месте, но выключена
+
+
+def test_disabled_rules(client):
+    store = client.app.state.signers
+    store.save_role("Ктото", holder_name="Кто-то К.К.")
+    company_id = store.save_rule(company="ТОО «Правила»", object_name="", set_name="list_1",
+                                 utverzhdayu="Ктото")
+    object_id = store.save_rule(company="ТОО «Правила»", object_name="Объект",
+                                set_name="list_2", utverzhdayu="Ктото")
+    assert store.resolve("ТОО «Правила»", "Объект")["source"] == "объект"
+    store.set_rules_enabled([object_id], False)
+    assert store.resolve("ТОО «Правила»", "Объект")["source"] == "компания"
+    store.set_rules_enabled([company_id], False)
+    assert store.resolve("ТОО «Правила»", "Объект")["source"] == "нет правила"
+    # отключённое правило видно в списке, но не действует
+    assert not next(r for r in store.rules() if r["id"] == object_id)["enabled"]
+
+
+def test_roles_save_keeps_enabled_flag(client):
+    store = client.app.state.signers
+    store.save_role("Отпускник", holder_name="Отпускник О.О.")
+    store.set_roles_enabled(["Отпускник"], False)
+    store.save_role("Отпускник", title="Новое название", holder_name="Отпускник О.О.")
+    assert not next(r for r in store.roles() if r["name"] == "Отпускник")["enabled"]
+    store.save_role("Отпускник", holder_name="Отпускник О.О.", enabled=True)
+    assert next(r for r in store.roles() if r["name"] == "Отпускник")["enabled"]
+
+
+def test_apply_to_selected_rules_only(client):
+    store = client.app.state.signers
+    rules = store.company_rules('ТОО "СМУ Аргон"')
+    store.save_role("Избранный", holder_name="Избранный И.И.")
+    chosen = [r["id"] for r in rules[:2]]
+    changed = store.apply_to_company('ТОО "СМУ Аргон"', utverzhdayu={"role": "Избранный"},
+                                     rule_ids=chosen)
+    assert changed == 2
+    after = {r["id"]: r["utverzhdayu_role"] for r in store.company_rules('ТОО "СМУ Аргон"')}
+    assert all(after[i] == "Избранный" for i in chosen)
+    assert any(v != "Избранный" for i, v in after.items() if i not in chosen)
+
+
+def test_delete_roles_skips_used(client):
+    store = client.app.state.signers
+    used = next(r["name"] for r in store.roles() if r["used"])
+    store.save_role("Свободная", holder_name="Никто Н.Н.")
+    deleted, skipped = store.delete_roles([used, "Свободная"])
+    assert deleted == 1 and skipped == [used]

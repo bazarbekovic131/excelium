@@ -118,6 +118,7 @@ class SignerStore:
                         "holder": fio, "vacant": not fio,
                         "in_structura": bool(row["holder_uid"]
                                              and row["holder_uid"] in ctx["staff"]),
+                        "enabled": bool(row["enabled"]),
                         "used": usage.get(row["name"], 0)})
         return out
 
@@ -136,20 +137,55 @@ class SignerStore:
             return self._usage(conn).get(name, 0)
 
     def save_role(self, name: str, *, title: str = "", holder_uid: str = "",
-                  holder_name: str = "") -> str:
+                  holder_name: str = "", enabled: bool | None = None) -> str:
+        """enabled=None — флаг не трогаем: сохранение каталога не должно
+        возвращать из отпуска тех, кого отключили."""
         name = str(name or "").strip()
         if not name:
             raise ValueError("у должности должно быть имя")
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        flag = 1 if enabled is None or enabled else 0
+        keep = "signer_roles.enabled" if enabled is None else "excluded.enabled"
         with connect(self.db_path) as conn:
             conn.execute(
-                "INSERT INTO signer_roles (name, title, holder_uid, holder_name, updated_at)"
-                " VALUES (?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET"
+                "INSERT INTO signer_roles (name, title, holder_uid, holder_name, enabled,"
+                " updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET"
                 " title = excluded.title, holder_uid = excluded.holder_uid,"
-                " holder_name = excluded.holder_name, updated_at = excluded.updated_at",
+                f" holder_name = excluded.holder_name, enabled = {keep},"
+                " updated_at = excluded.updated_at",
                 (name, str(title or "").strip(), str(holder_uid or "").strip(),
-                 print_name(holder_name), now))
+                 print_name(holder_name), flag, now))
         return name
+
+    def set_roles_enabled(self, names: list[str], enabled: bool) -> int:
+        """«В отпуске»: должность остаётся во всех правилах и наборах, но
+        подпись от неё не печатается, пока её не включат обратно."""
+        names = [str(n).strip() for n in names if str(n).strip()]
+        if not names:
+            return 0
+        marks = ",".join("?" * len(names))
+        with connect(self.db_path) as conn:
+            cur = conn.execute(
+                f"UPDATE signer_roles SET enabled = ? WHERE name IN ({marks})",
+                (1 if enabled else 0, *names))
+        return cur.rowcount
+
+    def delete_roles(self, names: list[str]) -> tuple[int, list[str]]:
+        """-> (удалено, пропущено): на используемую должность ссылаются
+        подписи, её удалять нельзя."""
+        deleted, skipped = 0, []
+        with connect(self.db_path) as conn:
+            usage = self._usage(conn)
+            for name in names:
+                name = str(name).strip()
+                if not name:
+                    continue
+                if usage.get(name):
+                    skipped.append(name)
+                    continue
+                deleted += conn.execute("DELETE FROM signer_roles WHERE name = ?",
+                                        (name,)).rowcount
+        return deleted, skipped
 
     def rename_role(self, old: str, new: str) -> None:
         """Переименование тянет за собой все ссылки: ключ — это и есть
@@ -222,19 +258,21 @@ class SignerStore:
         return out
 
     def save_set(self, name: str, lines: list[dict]) -> int:
-        """lines: [{"role", "company", "mark", "skip_expense_types"}] —
-        порядок списка и есть порядок подписей."""
+        """lines: [{"role", "company", "mark", "skip_expense_types", "enabled"}]
+        — порядок списка и есть порядок подписей. Выключенная строка
+        остаётся на месте, но в реестр не печатается."""
         name = str(name or "").strip()
         if not name:
             raise ValueError("имя набора обязательно")
         rows = [(name, i, e["role"].strip(), (e.get("company") or "").strip(),
-                 (e.get("mark") or "").strip(), (e.get("skip_expense_types") or "").strip())
+                 (e.get("mark") or "").strip(), (e.get("skip_expense_types") or "").strip(),
+                 0 if str(e.get("enabled", "1")) in ("0", "False", "") else 1)
                 for i, e in enumerate(e for e in lines if str(e.get("role") or "").strip())]
         with connect(self.db_path) as conn:
             conn.execute("DELETE FROM signer_set_lines WHERE set_name = ?", (name,))
             conn.executemany(
                 "INSERT INTO signer_set_lines (set_name, ord, role, print_company, mark,"
-                " skip_expense_types) VALUES (?,?,?,?,?,?)", rows)
+                " skip_expense_types, enabled) VALUES (?,?,?,?,?,?,?)", rows)
         return len(rows)
 
     def delete_set(self, name: str) -> None:
@@ -267,7 +305,7 @@ class SignerStore:
     def save_rule(self, *, company: str, object_name: str, set_name: str,
                   soglasovano: str = "", soglasovano_company: str = "",
                   utverzhdayu: str = "", utverzhdayu_company: str = "",
-                  rule_id: int | None = None) -> int:
+                  rule_id: int | None = None, enabled: bool = True) -> int:
         company = str(company or "").strip()
         if not company:
             raise ValueError("компания обязательна")
@@ -275,38 +313,64 @@ class SignerStore:
         values = (company, normalize_name(company), object_name, normalize_object(object_name),
                   str(set_name or "").strip(), str(soglasovano or "").strip(),
                   str(soglasovano_company or "").strip(), str(utverzhdayu or "").strip(),
-                  str(utverzhdayu_company or "").strip())
+                  str(utverzhdayu_company or "").strip(), 1 if enabled else 0)
         with connect(self.db_path) as conn:
             if rule_id:
                 conn.execute(
                     "UPDATE signer_rules SET company=?, company_key=?, object_name=?,"
                     " object_key=?, set_name=?, soglasovano_role=?, soglasovano_company=?,"
-                    " utverzhdayu_role=?, utverzhdayu_company=? WHERE id=?",
+                    " utverzhdayu_role=?, utverzhdayu_company=?, enabled=? WHERE id=?",
                     (*values, rule_id))
                 return rule_id
             cur = conn.execute(
                 "INSERT INTO signer_rules (company, company_key, object_name, object_key,"
                 " set_name, soglasovano_role, soglasovano_company, utverzhdayu_role,"
-                " utverzhdayu_company) VALUES (?,?,?,?,?,?,?,?,?)"
+                " utverzhdayu_company, enabled) VALUES (?,?,?,?,?,?,?,?,?,?)"
                 " ON CONFLICT(company_key, object_key) DO UPDATE SET"
                 " company=excluded.company, object_name=excluded.object_name,"
                 " set_name=excluded.set_name, soglasovano_role=excluded.soglasovano_role,"
                 " soglasovano_company=excluded.soglasovano_company,"
                 " utverzhdayu_role=excluded.utverzhdayu_role,"
-                " utverzhdayu_company=excluded.utverzhdayu_company", values)
+                " utverzhdayu_company=excluded.utverzhdayu_company,"
+                " enabled=excluded.enabled", values)
             return cur.lastrowid or 0
 
     def delete_rule(self, rule_id: int) -> None:
         with connect(self.db_path) as conn:
             conn.execute("DELETE FROM signer_rules WHERE id = ?", (rule_id,))
 
+    def _ids(self, ids) -> list[int]:
+        return [int(i) for i in ids if str(i).strip().lstrip("-").isdigit()]
+
+    def set_rules_enabled(self, ids: list, enabled: bool) -> int:
+        """Отключённое правило объекта уступает правилу компании, а
+        отключённое правило компании — как будто его нет."""
+        ids = self._ids(ids)
+        if not ids:
+            return 0
+        marks = ",".join("?" * len(ids))
+        with connect(self.db_path) as conn:
+            cur = conn.execute(f"UPDATE signer_rules SET enabled = ? WHERE id IN ({marks})",
+                               (1 if enabled else 0, *ids))
+        return cur.rowcount
+
+    def delete_rules(self, ids: list) -> int:
+        ids = self._ids(ids)
+        if not ids:
+            return 0
+        marks = ",".join("?" * len(ids))
+        with connect(self.db_path) as conn:
+            cur = conn.execute(f"DELETE FROM signer_rules WHERE id IN ({marks})", ids)
+        return cur.rowcount
+
     def apply_to_company(self, company: str, *, soglasovano: dict | None = None,
                          utverzhdayu: dict | None = None,
-                         set_name: str | None = None) -> int:
-        """Проставить одно и то же во все правила компании. Утверждающий
-        у компании один на все объекты, и правкой по одной строке это
-        занятие на полдня. None — поле не трогаем; {"role": "", …} —
-        очистить."""
+                         set_name: str | None = None,
+                         rule_ids: list | None = None) -> int:
+        """Проставить одно и то же во все правила компании (или только в
+        выбранные rule_ids). Утверждающий у компании один на все объекты,
+        и правкой по одной строке это занятие на полдня. None — поле не
+        трогаем; {"role": "", …} — очистить."""
         sets_sql, values = [], []
         for role, slot in (("soglasovano", soglasovano), ("utverzhdayu", utverzhdayu)):
             if slot is None:
@@ -319,10 +383,15 @@ class SignerStore:
             values.append(set_name.strip())
         if not sets_sql:
             return 0
+        where, params = "company_key = ?", [normalize_name(company)]
+        ids = self._ids(rule_ids or [])
+        if ids:
+            where += f" AND id IN ({','.join('?' * len(ids))})"
+            params += ids
         with connect(self.db_path) as conn:
             cur = conn.execute(
-                f"UPDATE signer_rules SET {', '.join(sets_sql)} WHERE company_key = ?",
-                (*values, normalize_name(company)))
+                f"UPDATE signer_rules SET {', '.join(sets_sql)} WHERE {where}",
+                (*values, *params))
             return cur.rowcount
 
     # --- подбор ---------------------------------------------------------
@@ -349,6 +418,10 @@ class SignerStore:
             log.warning("должности нет в справочнике — подпись останется пустой",
                         extra={"data": {"role": role_name}})
             return None
+        if not role.get("enabled", 1):
+            log.info("должность отключена — подпись не печатается",
+                     extra={"data": {"role": role_name}})
+            return None
         fio = self._holder_fio(role, ctx)
         if not fio:
             log.warning("на должность никто не назначен — подпись останется пустой",
@@ -364,13 +437,13 @@ class SignerStore:
         object_key = normalize_object(object_name)
         with connect(self.db_path) as conn:
             row = conn.execute(
-                "SELECT * FROM signer_rules WHERE company_key = ? AND object_key = ?",
-                (company_key, object_key)).fetchone()
+                "SELECT * FROM signer_rules WHERE company_key = ? AND object_key = ?"
+                " AND enabled = 1", (company_key, object_key)).fetchone()
             source = "объект"
             if row is None:
                 row = conn.execute(
-                    "SELECT * FROM signer_rules WHERE company_key = ? AND object_key = ''",
-                    (company_key,)).fetchone()
+                    "SELECT * FROM signer_rules WHERE company_key = ? AND object_key = ''"
+                    " AND enabled = 1", (company_key,)).fetchone()
                 source = "компания"
             if row is None:
                 log.warning("нет правила подписей: реестр выйдет без подписей",
@@ -380,12 +453,16 @@ class SignerStore:
             whole = row
             if source == "объект":
                 whole = conn.execute(
-                    "SELECT * FROM signer_rules WHERE company_key = ? AND object_key = ''",
-                    (company_key,)).fetchone() or row
+                    "SELECT * FROM signer_rules WHERE company_key = ? AND object_key = ''"
+                    " AND enabled = 1", (company_key,)).fetchone() or row
             lines = conn.execute(
-                "SELECT * FROM signer_set_lines WHERE set_name = ? ORDER BY ord",
-                (row["set_name"],)).fetchall()
+                "SELECT * FROM signer_set_lines WHERE set_name = ? AND enabled = 1"
+                " ORDER BY ord", (row["set_name"],)).fetchall()
         ctx = ctx or self.context()
+
+        def active(role_name: str) -> bool:
+            role = ctx["roles"].get(role_name)
+            return bool(role and role.get("enabled", 1))
 
         expense = str(expense_type or "").strip().casefold()
         coordinators = []
@@ -399,8 +476,8 @@ class SignerStore:
                 coordinators.append(person)
 
         def top(role: str) -> dict | None:
-            # у объекта не задано — берём правило компании
-            source_row = row if row[f"{role}_role"] else whole
+            # у объекта не задано или должность в отпуске — берём правило компании
+            source_row = row if row[f"{role}_role"] and active(row[f"{role}_role"]) else whole
             if not source_row[f"{role}_role"]:
                 return None
             return self._signature(source_row[f"{role}_role"],
@@ -417,6 +494,8 @@ class SignerStore:
                     "SELECT COUNT(DISTINCT set_name) c FROM signer_set_lines").fetchone()["c"],
                 "rules": conn.execute("SELECT COUNT(*) c FROM signer_rules").fetchone()["c"],
                 "vacant": sum(1 for r in self.roles() if r["vacant"]),
+                "disabled_roles": conn.execute(
+                    "SELECT COUNT(*) c FROM signer_roles WHERE enabled = 0").fetchone()["c"],
             }
 
     # --- первичное наполнение --------------------------------------------
