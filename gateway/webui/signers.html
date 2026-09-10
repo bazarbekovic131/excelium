@@ -1,6 +1,21 @@
 {% extends "base.html" %}
 {% from "_signers_nav.html" import nav %}
-{% block title %}Подписанты — Doc-V Gateway{% endblock %}
+{% block title %}Подписанты — Doc-V Gateway
+<div class="card">
+  <div class="card-head">
+    <span class="card-title">Экспорт и импорт</span>
+    <span class="card-note">весь состав одним JSON-файлом: резерв перед правкой, перенос на другой сервер</span>
+  </div>
+  <div class="card-body row wrap">
+    <a class="btn" href="/ui/signers/export">{{ icon('download') }}Скачать JSON</a>
+    <form method="post" action="/ui/signers/import" enctype="multipart/form-data" class="row"
+          onsubmit="return confirm('Заменить весь справочник подписантов содержимым файла? Текущее состояние будет сохранено в Файлах закреплённой копией.')">
+      <input type="file" name="upload" accept=".json,application/json" required class="w-300">
+      <button class="btn danger" data-busy="Загружаем…">{{ icon('upload') }}Заменить из файла</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>

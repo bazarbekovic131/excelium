@@ -17,6 +17,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
+from ..auditlog import EVENT_TITLES, query as audit_query
 from ..config import APP_DIR
 from ..logging_setup import audit_log
 from ..opsrunner.runner import OpsValidationError, run_operation
@@ -94,32 +95,6 @@ templates.env.filters["ago"] = _ago
 
 AUDIT_TAIL = 50
 ALMATY = timezone(timedelta(hours=5))
-EVENT_TITLES = {
-    "deny_ip": "Отклонён запрос с чужого адреса",
-    "deny_token": "Отклонён запрос с неверным токеном",
-    "deny_ui": "Отклонён вход в панель",
-    "rate_limited": "Запрос отклонён по лимиту частоты",
-    "ui_login": "Вход в панель",
-    "ui_login_failed": "Неверный админ-токен",
-    "job_enqueued": "Задание поставлено в очередь",
-    "jobs_acked": "Doc-V подтвердил задания",
-    "job_many_attempts": "Задание выдаётся слишком часто",
-    "ops_start": "Запущена операция",
-    "ops_finish": "Операция завершена",
-    "directory_replaced": "Обновлён справочник из Doc-V",
-    "typst_template_saved": "Сохранён шаблон Typst",
-    "typst_template_restored": "Возвращена версия шаблона",
-    "typst_template_deleted": "Удалён шаблон Typst",
-    "typst_asset_uploaded": "Загружена картинка",
-    "typst_asset_deleted": "Удалена картинка",
-    "file_to_assets": "Файл перенесён в картинки",
-    "ui_file_uploaded": "Загружен файл",
-    "ui_file_renamed": "Файл переименован",
-    "ui_file_deleted": "Файл удалён",
-    "ui_files_zip": "Файлы скачаны архивом",
-    "ui_job_ack": "Задание подтверждено вручную",
-    "ui_job_enqueued": "Создано тестовое задание",
-}
 SAMPLE = json.dumps({"request": [{
     "registry_name": "РЕЕСТР ПЛАТЕЖЕЙ №1", "organization": "ТОО «Шар-Кұрылыс»",
     "object_name": "Администрация", "counteragent": "ТОО «Пример»",
@@ -129,7 +104,7 @@ SAMPLE = json.dumps({"request": [{
 }]}, ensure_ascii=False, indent=1)
 
 
-REFRESHABLE = {"dash", "jobs"}
+REFRESHABLE = {"dash", "jobs", "log"}
 
 
 def _page(request: Request, template: str, page: str, **ctx) -> HTMLResponse:
@@ -177,31 +152,10 @@ def dashboard(request: Request):
     state = request.app.state
     files = state.filestore.list_files()
 
-    # лента: audit-лог, свежие сверху; вид точки — по характеру события
-    events, denies = [], 0
-    audit_path = state.settings.var_dir / "audit.log"
-    if audit_path.is_file():
-        for line in audit_path.read_text(encoding="utf-8").splitlines()[-AUDIT_TAIL:][::-1]:
-            try:
-                e = json.loads(line)
-            except ValueError:
-                continue
-            message = e.get("message", "")
-            details = {k: v for k, v in e.items()
-                       if k not in ("ts", "level", "logger", "message")}
-            dot = ""
-            if message.startswith("deny") or message == "rate_limited":
-                dot, denies = "danger", denies + 1
-            elif message.endswith("_failed") or details.get("ok") is False:
-                dot = "warn"
-            elif message.startswith("ui_") or message.startswith("job"):
-                dot = "off" if message.startswith("ui_") else ""
-            events.append({
-                "time": e.get("ts", "")[11:19],
-                "dot": dot,
-                "text": EVENT_TITLES.get(message, message) + (
-                    " · " + json.dumps(details, ensure_ascii=False) if details else ""),
-            })
+    # лента: последние события журнала, свежие сверху
+    events, _ = audit_query(state.settings.var_dir, limit=AUDIT_TAIL)
+    denies = sum(1 for e in events if e["tone"] == "danger")
+    events = [{"time": e["ts"][11:19], "dot": e["tone"], "text": e["text"]} for e in events]
 
     beats = []
     for kind, info in state.heartbeat.snapshot().items():
@@ -236,13 +190,30 @@ def dashboard(request: Request):
                  today_line=now.strftime("%d.%m.%Y, %H:%M по Астане"))
 
 
+PAGE_SIZE = 50
+
+# --- журнал событий ---------------------------------------------------------
+
+LOG_TONES = (("", "все"), ("danger", "отказы"), ("warn", "сбои"), ("ok", "работа"),
+             ("off", "действия в панели"))
+LOG_DAYS = ((1, "сегодня"), (7, "неделя"), (30, "месяц"), (0, "всё время"))
+
+
+@router.get("/ui/log")
+def log_page(request: Request, search: str = "", tone: str = "", event: str = "",
+             days: int = 7, limit: int = PAGE_SIZE):
+    events, has_more = audit_query(request.app.state.settings.var_dir, search=search,
+                                   tone_filter=tone, event=event, days=days, limit=limit)
+    return _page(request, "log.html", "log", events=events, has_more=has_more,
+                 next_limit=limit + PAGE_SIZE, search=search, tone=tone, event=event,
+                 days=days, tones=LOG_TONES, day_options=LOG_DAYS,
+                 event_options=sorted(EVENT_TITLES.items(), key=lambda kv: kv[1]))
+
+
 # --- задания --------------------------------------------------------------
 
 JOB_STATUS_TITLES = {"pending": "в очереди", "leased": "выдано Doc-V",
                      "acked": "подтверждено"}
-
-
-PAGE_SIZE = 50
 
 
 @router.get("/ui/jobs")
@@ -1024,6 +995,51 @@ async def signers_company_apply(request: Request):
         return RedirectResponse(f"{link}&flash=Ничего не отмечено — ничего не изменилось",
                                 status_code=302)
     return RedirectResponse(f"{link}&flash=Проставлено в {changed} правил", status_code=302)
+
+
+@router.get("/ui/signers/export")
+def signers_export(request: Request):
+    from fastapi import Response
+    data = request.app.state.signers.export_json()
+    audit_log("signers_exported", roles=len(data["roles"]), rules=len(data["rules"]))
+    body = json.dumps(data, ensure_ascii=False, indent=1)
+    fname = f"signers_{date.today()}.json"
+    return Response(content=body, media_type="application/json; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+IMPORT_LIMIT = 2 * 1024 * 1024
+
+
+@router.post("/ui/signers/import")
+async def signers_import(request: Request, upload: UploadFile):
+    """Замена всего состава файлом. Перед этим текущее состояние уходит в
+    Файлы закреплённой резервной копией — откат всегда под рукой."""
+    state = request.app.state
+    raw = await upload.read()
+    if len(raw) > IMPORT_LIMIT:
+        return RedirectResponse("/ui/signers?flash=Файл больше 2 МБ&flash_err=1",
+                                status_code=302)
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError) as exc:
+        return RedirectResponse(f"/ui/signers?flash=Это не JSON: {exc}&flash_err=1",
+                                status_code=302)
+    backup = json.dumps(state.signers.export_json(), ensure_ascii=False, indent=1)
+    stamp = datetime.now(ALMATY).strftime("%Y-%m-%d_%H-%M")
+    backup_name = f"signers_backup_{stamp}.json"
+    token = state.filestore.save_bytes(backup.encode("utf-8"), ".json", backup_name)
+    state.filestore.set_pinned([token], True)
+    try:
+        counts = state.signers.import_json(data)
+    except ValueError as exc:
+        return RedirectResponse(f"/ui/signers?flash=Файл не принят: {exc}&flash_err=1",
+                                status_code=302)
+    audit_log("signers_imported", **counts, backup=token)
+    return RedirectResponse(
+        f"/ui/signers?flash=Импортировано: должностей {counts['roles']}, наборов"
+        f" {counts['sets']}, правил {counts['rules']}. Резервная копия: {backup_name}"
+        " (в Файлах, закреплена)", status_code=302)
 
 
 EMPTY_RULE = {"id": None, "company": "", "object_name": "", "set_name": "",

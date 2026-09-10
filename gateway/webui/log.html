@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Журнал событий — Doc-V Gateway{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Журнал событий</h1>
+    <span class="sub">всё, что делали шлюз, Doc-V и администраторы: отказы, запуски, правки</span>
+  </div>
+  <div class="head-actions">
+    <a class="btn" href="/ui/log?days={{ days }}&tone={{ tone }}&event={{ event }}&search={{ search|urlencode }}">{{ icon('refresh') }}Обновить</a>
+  </div>
+</div>
+
+<form class="filters" method="get" action="/ui/log" data-no-lock>
+  <input type="text" name="search" value="{{ search }}" placeholder="что искать: компания, файл, адрес">
+  <select name="tone" onchange="this.form.submit()">
+    {% for value, title in tones %}
+    <option value="{{ value }}" {{ 'selected' if value == tone }}>{{ title }}</option>
+    {% endfor %}
+  </select>
+  <select name="event" onchange="this.form.submit()">
+    <option value="">все события</option>
+    {% for value, title in event_options %}
+    <option value="{{ value }}" {{ 'selected' if value == event }}>{{ title }}</option>
+    {% endfor %}
+  </select>
+  <select name="days" onchange="this.form.submit()">
+    {% for value, title in day_options %}
+    <option value="{{ value }}" {{ 'selected' if value == days }}>{{ title }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn">{{ icon('search') }}Искать</button>
+  {% if search or tone or event or days != 7 %}<a class="text-sm" href="/ui/log">Сбросить</a>{% endif %}
+  <span class="count right">показано: {{ events|length }}</span>
+</form>
+
+<div class="card">
+  {% if events %}
+  <table>
+    <thead><tr>
+      <th class="w-150">Время</th><th class="w-40"></th><th class="w-300">Событие</th>
+      <th>Подробности</th><th class="w-120">Адрес</th>
+    </tr></thead>
+    <tbody>
+    {% for e in events %}
+    <tr>
+      <td class="mono muted nowrap">{{ e.ts|dt }}<span class="hint">:{{ e.ts[17:19] }}</span></td>
+      <td><span class="dot {{ e.tone }}"></span></td>
+      <td>{{ e.title }}<div class="hint"><span class="tag">{{ e.event }}</span></div></td>
+      <td class="mono text-sm">{% for k, v in e.details.items() if k != 'ip' %}{{ k }}: {{ v }}{% if not loop.last %} · {% endif %}{% endfor %}</td>
+      <td class="mono text-sm muted">{{ e.ip }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if has_more %}
+  <div class="card-body center">
+    <a class="btn" href="/ui/log?limit={{ next_limit }}&days={{ days }}&tone={{ tone }}&event={{ event }}&search={{ search|urlencode }}">Показать ещё</a>
+  </div>
+  {% endif %}
+  {% else %}
+  <div class="empty">За выбранный период событий нет.</div>
+  {% endif %}
+</div>
+{% endblock %}

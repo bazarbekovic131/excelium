@@ -498,6 +498,92 @@ class SignerStore:
                     "SELECT COUNT(*) c FROM signer_roles WHERE enabled = 0").fetchone()["c"],
             }
 
+    # --- экспорт и импорт -------------------------------------------------
+
+    def export_json(self) -> dict:
+        """Весь состав одним словарём без служебных ключей: ключи
+        компаний и объектов пересчитываются при импорте."""
+        with connect(self.db_path) as conn:
+            roles = [{"name": r["name"], "title": r["title"], "holder_uid": r["holder_uid"],
+                      "holder_name": r["holder_name"], "enabled": bool(r["enabled"])}
+                     for r in conn.execute("SELECT * FROM signer_roles ORDER BY name")]
+            sets: dict[str, list[dict]] = {}
+            for r in conn.execute("SELECT * FROM signer_set_lines ORDER BY set_name, ord"):
+                sets.setdefault(r["set_name"], []).append({
+                    "role": r["role"], "print_company": r["print_company"],
+                    "mark": r["mark"], "skip_expense_types": r["skip_expense_types"],
+                    "enabled": bool(r["enabled"])})
+            rules = [{"company": r["company"], "object_name": r["object_name"],
+                      "set_name": r["set_name"],
+                      "soglasovano_role": r["soglasovano_role"],
+                      "soglasovano_company": r["soglasovano_company"],
+                      "utverzhdayu_role": r["utverzhdayu_role"],
+                      "utverzhdayu_company": r["utverzhdayu_company"],
+                      "enabled": bool(r["enabled"])}
+                     for r in conn.execute("SELECT * FROM signer_rules"
+                                           " ORDER BY company, object_name")]
+        return {"version": 1,
+                "exported_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "roles": roles, "sets": sets, "rules": rules}
+
+    def import_json(self, data: dict, *, mode: str = "replace") -> dict[str, int]:
+        """Полная замена состава содержимым файла. Только replace: слияние
+        двух составов без общего идентификатора неоднозначно."""
+        if mode != "replace":
+            raise ValueError("поддерживается только полная замена")
+        if not isinstance(data, dict) or data.get("version") != 1:
+            raise ValueError("ожидается файл экспорта версии 1")
+        roles, sets, rules = data.get("roles"), data.get("sets"), data.get("rules")
+        if not isinstance(roles, list) or not isinstance(sets, dict) \
+                or not isinstance(rules, list):
+            raise ValueError("в файле должны быть roles, sets и rules")
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+        def flag(item: dict) -> int:
+            return 0 if item.get("enabled") in (False, 0, "0") else 1
+
+        with connect(self.db_path) as conn:
+            for table in ("signer_rules", "signer_set_lines", "signer_roles"):
+                conn.execute(f"DELETE FROM {table}")
+            conn.executemany(
+                "INSERT INTO signer_roles (name, title, holder_uid, holder_name, enabled,"
+                " updated_at) VALUES (?,?,?,?,?,?)",
+                [(str(r.get("name") or "").strip(), str(r.get("title") or ""),
+                  str(r.get("holder_uid") or ""), print_name(r.get("holder_name")),
+                  flag(r), now) for r in roles if str(r.get("name") or "").strip()])
+            lines = []
+            for set_name, items in sets.items():
+                for i, e in enumerate(items if isinstance(items, list) else []):
+                    if str(e.get("role") or "").strip():
+                        lines.append((set_name, i, str(e["role"]).strip(),
+                                      str(e.get("print_company") or ""),
+                                      str(e.get("mark") or ""),
+                                      str(e.get("skip_expense_types") or ""), flag(e)))
+            conn.executemany(
+                "INSERT INTO signer_set_lines (set_name, ord, role, print_company, mark,"
+                " skip_expense_types, enabled) VALUES (?,?,?,?,?,?,?)", lines)
+            rows = []
+            for r in rules:
+                company = str(r.get("company") or "").strip()
+                if not company:
+                    continue
+                obj = str(r.get("object_name") or "").strip()
+                rows.append((company, normalize_name(company), obj, normalize_object(obj),
+                             str(r.get("set_name") or ""), str(r.get("soglasovano_role") or ""),
+                             str(r.get("soglasovano_company") or ""),
+                             str(r.get("utverzhdayu_role") or ""),
+                             str(r.get("utverzhdayu_company") or ""), flag(r)))
+            conn.executemany(
+                "INSERT OR REPLACE INTO signer_rules (company, company_key, object_name,"
+                " object_key, set_name, soglasovano_role, soglasovano_company,"
+                " utverzhdayu_role, utverzhdayu_company, enabled)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?)", rows)
+            counts = {"roles": conn.execute("SELECT COUNT(*) c FROM signer_roles").fetchone()["c"],
+                      "sets": len({ln[0] for ln in lines}),
+                      "rules": conn.execute("SELECT COUNT(*) c FROM signer_rules").fetchone()["c"]}
+        log.info("состав подписантов импортирован", extra={"data": counts})
+        return counts
+
     # --- первичное наполнение --------------------------------------------
 
     def is_empty(self) -> bool:

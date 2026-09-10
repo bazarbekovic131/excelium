@@ -410,3 +410,29 @@ def test_delete_roles_skips_used(client):
     store.save_role("Свободная", holder_name="Никто Н.Н.")
     deleted, skipped = store.delete_roles([used, "Свободная"])
     assert deleted == 1 and skipped == [used]
+
+
+# --- экспорт и импорт -------------------------------------------------------
+
+def test_export_import_roundtrip(client):
+    store = client.app.state.signers
+    store.set_roles_enabled([store.roles()[0]["name"]], False)
+    before = store.resolve("ТОО «Шар-Кұрылыс»", "Администрация")
+    data = store.export_json()
+    assert data["version"] == 1 and data["roles"] and data["sets"] and data["rules"]
+    assert any(r["enabled"] is False for r in data["roles"])
+    # стираем всё и возвращаем из файла
+    with connect(client.settings.db_path) as conn:
+        for table in ("signer_rules", "signer_set_lines", "signer_roles"):
+            conn.execute(f"DELETE FROM {table}")
+    assert store.resolve("ТОО «Шар-Кұрылыс»", "Администрация")["source"] == "нет правила"
+    counts = store.import_json(json.loads(json.dumps(data)))
+    assert counts["rules"] == len(data["rules"]) and counts["roles"] == len(data["roles"])
+    assert store.resolve("ТОО «Шар-Кұрылыс»", "Администрация") == before
+    assert not store.roles()[0]["enabled"]
+    for bad in ({"version": 2}, {"version": 1, "roles": {}, "sets": {}, "rules": []}, []):
+        try:
+            store.import_json(bad)
+            assert False, bad
+        except ValueError:
+            pass

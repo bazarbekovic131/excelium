@@ -24,19 +24,33 @@ class JsonFormatter(logging.Formatter):
 
 def setup_logging(var_dir: Path) -> None:
     root = logging.getLogger()
-    if any(getattr(h, "_gateway", False) for h in root.handlers):
-        return  # повторный вызов (тесты, воркеры) — не дублировать хендлеры
-    root.setLevel(logging.INFO)
-    stream = logging.StreamHandler()
-    stream.setFormatter(JsonFormatter())
-    stream._gateway = True
-    root.addHandler(stream)
+    if not any(getattr(h, "_gateway", False) for h in root.handlers):
+        root.setLevel(logging.INFO)
+        stream = logging.StreamHandler()
+        stream.setFormatter(JsonFormatter())
+        stream._gateway = True
+        root.addHandler(stream)
 
+    # Файл журнала привязан к var_dir: при повторном вызове с другим
+    # каталогом (тесты, смена настроек) прежний хендлер закрывается,
+    # иначе события уезжали бы в чужой каталог.
     var_dir.mkdir(parents=True, exist_ok=True)
+    target = (var_dir / "audit.log").resolve()
     audit = logging.getLogger("audit")
     audit.setLevel(logging.INFO)
     audit.propagate = False
-    fh = logging.handlers.WatchedFileHandler(var_dir / "audit.log", encoding="utf-8")
+    for handler in list(audit.handlers):
+        if not getattr(handler, "_gateway", False):
+            continue
+        if Path(getattr(handler, "baseFilename", "")).resolve() == target:
+            return
+        audit.removeHandler(handler)
+        handler.close()
+    # Ротация по размеру самим процессом: uvicorn здесь один воркер, а
+    # внешний logrotate для этого файла не нужен и не должен настраиваться.
+    # Страница журнала читает audit.log и audit.log.1…5 (gateway/auditlog.py).
+    fh = logging.handlers.RotatingFileHandler(
+        target, maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8")
     fh.setFormatter(JsonFormatter())
     fh._gateway = True
     audit.addHandler(fh)

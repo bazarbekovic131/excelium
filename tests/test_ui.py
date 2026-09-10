@@ -602,3 +602,60 @@ def test_rule_form_enabled_checkbox(client):
         "rule_id": str(rule["id"]), "company": "ТОО «Флажок»", "object_name": "",
         "set_name": "list_1", "utverzhdayu_role": role, "enabled": ["0", "1"]})
     assert store.resolve("ТОО «Флажок»", "Любой объект")["source"] == "компания"
+
+
+def test_signers_export_and_import_with_backup(client):
+    _login(client)
+    store = client.app.state.signers
+    r = client.get("/ui/signers/export")
+    assert r.status_code == 200 and "attachment" in r.headers["content-disposition"]
+    data = r.json()
+    data["rules"] = data["rules"][:3]
+    r = client.post("/ui/signers/import", follow_redirects=True,
+                    files={"upload": ("signers.json", json.dumps(data).encode(), "application/json")})
+    assert "Импортировано" in r.text and "правил 3" in r.text and "Резервная копия" in r.text
+    assert len(store.rules()) == 3
+    backups = [f for f in client.app.state.filestore.list_files()
+               if f["orig_name"].startswith("signers_backup_")]
+    assert backups and backups[0]["pinned"] is True
+    r = client.post("/ui/signers/import", follow_redirects=True,
+                    files={"upload": ("x.json", b'{"version": 9}', "application/json")})
+    assert "Файл не принят" in r.text
+
+
+def test_log_page_filters(client):
+    from gateway.logging_setup import audit_log
+    _login(client)
+    audit_log("deny_ip", ip="10.0.0.9", path="/jobs")
+    audit_log("directory_replaced", name="structura", count=3)
+    audit_log("ui_file_uploaded", name="бланк.png", size=10)
+    r = client.get("/ui/log")
+    assert r.status_code == 200
+    for marker in ("Отклонён запрос с чужого адреса", "Обновлён справочник", "бланк.png"):
+        assert marker in r.text
+    only_deny = client.get("/ui/log", params={"tone": "danger"}).text
+    assert "Отклонён запрос с чужого адреса" in only_deny and "бланк.png" not in only_deny
+    by_event = client.get("/ui/log", params={"event": "directory_replaced"}).text
+    assert "structura" in by_event and "10.0.0.9" not in by_event
+    by_search = client.get("/ui/log", params={"search": "бланк"}).text
+    assert "бланк.png" in by_search and "structura" not in by_search
+    assert "За выбранный период событий нет" in client.get(
+        "/ui/log", params={"search": "такогонет"}).text
+    # обзор показывает те же события и считает отказы
+    dash = client.get("/ui").text
+    assert "Отклонён запрос с чужого адреса" in dash
+
+
+def test_audit_rotation_reads_older_file(client):
+    from gateway.auditlog import query
+    var = client.settings.var_dir
+    old_line = json.dumps({"ts": "2020-01-01T00:00:00.000+00:00", "level": "INFO",
+                           "logger": "audit", "message": "ops_finish", "op": "старая", "ok": True})
+    (var / "audit.log.1").write_text(old_line + "\n", encoding="utf-8")
+    from gateway.logging_setup import audit_log
+    audit_log("ops_finish", op="новая", ok=True)
+    events, _ = query(var, days=0, limit=10)
+    names = [e["details"].get("op") for e in events if e["event"] == "ops_finish"]
+    assert names[0] == "новая" and "старая" in names
+    events, _ = query(var, days=7, limit=10)
+    assert "старая" not in [e["details"].get("op") for e in events]
