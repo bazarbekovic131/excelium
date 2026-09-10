@@ -72,6 +72,28 @@ def print_name(value) -> str:
     return re.sub(r"\s*\([^()]*\)\s*$", "", text).strip()
 
 
+def short_name(value) -> str:
+    """«Аманов Бауыржан Шарипович» -> «Аманов Б.Ш.»
+
+    Структура Doc-V шлёт ФИО полностью, а в реестрах и на печатных
+    формах подпись всегда сокращённая — так было в старом справочнике,
+    так её и читают. Уже сокращённое имя проходит без изменений,
+    односложное («ДРС») остаётся как есть.
+    """
+    text = print_name(value)
+    parts = [p for p in re.split(r"\s+", text) if p]
+    if len(parts) < 2:
+        return text
+    letters = []
+    for token in parts[1:]:
+        for chunk in re.split(r"[.\s]+", token):
+            if chunk and chunk[0].isalpha():
+                letters.append(chunk[0].upper())
+    if not letters:
+        return parts[0]
+    return parts[0] + " " + "".join(f"{x}." for x in letters[:2])
+
+
 def _person(fio: str, position: str, company: str, mark: str = "") -> dict:
     out = {"fio": fio, "position": position, "company": company}
     if mark:
@@ -405,11 +427,12 @@ class SignerStore:
 
     def _holder_fio(self, role: dict | None, ctx: dict) -> str:
         """Имя из Структуры главнее вписанного руками: вписанное — это
-        запас на случай, если человека в Doc-V нет."""
+        запас на случай, если человека в Doc-V нет. Наружу идёт
+        сокращённая форма — она и печатается в реестре."""
         if not role:
             return ""
         person = ctx["staff"].get(role["holder_uid"]) if role["holder_uid"] else None
-        return person["fio"] if person else print_name(role["holder_name"])
+        return short_name(person["fio"] if person else role["holder_name"])
 
     def _signature(self, role_name: str, company: str, ctx: dict,
                    mark: str = "") -> dict | None:

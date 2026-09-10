@@ -7,7 +7,7 @@ import openpyxl
 
 from conftest import docv_headers
 from gateway.jobsqueue.db import connect
-from gateway.signers import fio_key, print_name
+from gateway.signers import fio_key, print_name, short_name
 
 MODEL = json.loads((Path(__file__).parent / "data" / "model.json").read_text(encoding="utf-8"))
 
@@ -60,8 +60,11 @@ def test_seed_matches_vlookup_line_for_line(client):
     excl = raw["expense_type_exclusions"]
 
     def line(i):
+        # ФИО сравниваем в сокращённой форме: на листе инициалы стояли
+        # вразнобой («Сергачев П. А.», «Татин Ә. Ж»), шлюз печатает их
+        # единообразно «Фамилия И.О.»
         fio, comp, pos = spr[i]
-        return (" ".join(x for x in (pos, comp) if x), fio)
+        return (" ".join(x for x in (pos, comp) if x), short_name(fio))
 
     def vlookup(company, obj, zatraty):
         rule = rules.get((normalize_name(company), normalize_object(obj))) \
@@ -163,18 +166,19 @@ def test_role_takes_fio_from_structura_and_title_from_itself(client):
     _structura(client, [
         {"uid": "u-1", "display_name": "Аманов Бауыржан Шарипович (Генеральный директор)",
          "position": "Генеральный директор", "department": "Дирекция"},
-        {"uid": "u-2", "display_name": "Второй Директор", "position": "Директор"}])
+        {"uid": "u-2", "display_name": "Сменщиков Пётр Петрович", "position": "Директор"}])
     store.save_role("Гендиректор Шар-Құрылыс", title="Генеральный директор", holder_uid="u-1")
     for company in ("ТОО «Одна»", "ТОО «Другая»"):
         store.save_rule(company=company, object_name="", set_name="list_1",
                         utverzhdayu="Гендиректор Шар-Құрылыс")
     first = store.resolve("ТОО «Одна»")["utverzhdayu"]
-    # хвост «(Генеральный директор)» из display_name в подпись не идёт
-    assert first == {"fio": "Аманов Бауыржан Шарипович", "position": "Генеральный директор",
+    # Структура шлёт ФИО полностью, в подпись идёт «Фамилия И.О.»;
+    # хвост «(Генеральный директор)» из display_name отбрасывается
+    assert first == {"fio": "Аманов Б.Ш.", "position": "Генеральный директор",
                      "company": "ТОО «Одна»"}
     store.save_role("Гендиректор Шар-Құрылыс", title="Генеральный директор", holder_uid="u-2")
-    assert store.resolve("ТОО «Одна»")["utverzhdayu"]["fio"] == "Второй Директор"
-    assert store.resolve("ТОО «Другая»")["utverzhdayu"]["fio"] == "Второй Директор"
+    assert store.resolve("ТОО «Одна»")["utverzhdayu"]["fio"] == "Сменщиков П.П."
+    assert store.resolve("ТОО «Другая»")["utverzhdayu"]["fio"] == "Сменщиков П.П."
 
 
 def test_same_title_different_people_are_different_roles(client):
@@ -191,11 +195,11 @@ def test_same_title_different_people_are_different_roles(client):
 
 def test_structura_name_wins_over_typed_name(client):
     store = client.app.state.signers
-    _structura(client, [{"uid": "u-9", "display_name": "Из Структуры И.С."}])
+    _structura(client, [{"uid": "u-9", "display_name": "Структурный Иван Сергеевич"}])
     store.save_role("Проверяющий", holder_uid="u-9", holder_name="Вписанный В.В.")
     store.save_rule(company="ТОО «Кто»", object_name="", set_name="list_1",
                     soglasovano="Проверяющий")
-    assert store.resolve("ТОО «Кто»")["soglasovano"]["fio"] == "Из Структуры И.С."
+    assert store.resolve("ТОО «Кто»")["soglasovano"]["fio"] == "Структурный И.С."
     # uid исчез из Структуры — остаётся вписанное имя, а не пустота
     _structura(client, [{"uid": "u-other", "display_name": "Другой Д.Д."}])
     assert store.resolve("ТОО «Кто»")["soglasovano"]["fio"] == "Вписанный В.В."
@@ -237,8 +241,10 @@ def test_link_by_name_fills_uid_once(client):
     result = store.link_by_name()
     assert result["linked"] >= 1
     after = store.resolve("ТОО «Шар-Кұрылыс»", "Администрация")["utverzhdayu"]
-    assert after["fio"] == "Аманов Бауыржан Шарипович"
+    # теперь имя берётся из Структуры, но печатается всё так же коротко
+    assert after["fio"] == "Аманов Б.Ш."
     assert after["position"] == "Генеральный директор"
+    assert next(r for r in store.roles() if r["holder"] == "Аманов Б.Ш.")["holder_uid"] == "u-1"
 
 
 def test_fio_helpers():
@@ -379,3 +385,16 @@ def test_export_import_roundtrip(client):
             assert False, bad
         except ValueError:
             pass
+
+
+def test_short_name_shapes():
+    """Печатная форма ФИО: «Фамилия И.О.» из чего угодно."""
+    assert short_name("Аманов Бауыржан Шарипович") == "Аманов Б.Ш."
+    assert short_name("Аманов Бауыржан Шарипович (Гендиректор)") == "Аманов Б.Ш."
+    assert short_name("Аманов Б.Ш.") == "Аманов Б.Ш."       # уже коротко
+    assert short_name("Сергачев П. А.") == "Сергачев П.А."  # пробел внутри инициалов
+    assert short_name("Татин Ә. Ж") == "Татин Ә.Ж."         # без точки в конце
+    assert short_name("Иванов-Петров Иван Иванович") == "Иванов-Петров И.И."
+    assert short_name("Аманов Бауыржан") == "Аманов Б."     # отчества нет
+    assert short_name("ДРС") == "ДРС"                       # одно слово — как есть
+    assert short_name("") == ""
