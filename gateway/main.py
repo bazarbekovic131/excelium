@@ -19,6 +19,7 @@ from .renderers.registry_outer import load_banks
 from .renderers.typst_store import TypstStore
 from .renderers.typst_renderer import configure as configure_typst
 from .renderers.typst_renderer import typst_available, typst_binary
+from .opsrunner.history import OpsHistory
 from .opsrunner.registry import load_registry
 from .settings_store import SettingsStore
 from .signers import SignerStore
@@ -47,6 +48,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.template_priority = APP_DIR / "templates" / "excel" / "template_priority_registry.xlsx"
         app.state.ops_path = APP_DIR / "ops.yaml"
         app.state.ops = load_registry(app.state.ops_path)
+        app.state.ops_history = OpsHistory(settings.db_path)
         app.state.settings_store = SettingsStore(settings, settings.var_dir / "settings.json")
         app.state.settings_store.load()
         app.state.apilog = ApiLog()
@@ -135,6 +137,7 @@ async def _sweep_loop(app: FastAPI) -> None:
             await asyncio.to_thread(app.state.filestore.sweep)
             await asyncio.to_thread(app.state.jobs.sweep)
             await asyncio.to_thread(app.state.directory.sweep)
+            await asyncio.to_thread(app.state.ops_history.sweep)
         except Exception:
             log.exception("sweep failed")
 

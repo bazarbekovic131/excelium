@@ -1,0 +1,26 @@
+{# Карточка результата запуска: одинакова на странице запуска и в списке. #}
+{% macro ops_result(result) -%}
+<div class="card">
+  <div class="card-head">
+    <span class="card-title">Результат: {{ result.op }}</span>
+    <span class="row">
+      <span class="badge {{ 'success' if result.ok else 'danger' }}">{{ 'успешно' if result.ok else 'ошибка' }}</span>
+      <span class="card-note">Код выхода {{ result.exit_code }}, отклик: {{ result.duration_ms }} мс</span>
+    </span>
+  </div>
+  <div class="card-body stack tight">
+    {% if result.files %}
+    <div class="row wrap">
+      {% for f in result.files %}
+      <a class="btn" href="{{ f.download_url }}" target="_blank">{{ icon('download') }}{{ f.name }}</a>
+      <a class="btn ghost" data-copy="{{ f.download_url }}" href="#">{{ icon('copy') }}<span data-label>Копировать</span></a>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if result.stdout %}<pre class="out">{{ result.stdout }}</pre>{% endif %}
+    {% if result.stderr %}<pre class="out">{{ result.stderr }}</pre>{% endif %}
+    {% if result.error %}<pre class="out">{{ result.error }}</pre>{% endif %}
+    {% if not result.stdout and not result.stderr and not result.error %}<div class="hint">Вывода не было.</div>{% endif %}
+  </div>
+</div>
+{%- endmacro %}

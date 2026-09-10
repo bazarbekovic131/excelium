@@ -12,34 +12,13 @@
   </div>
 </div>
 
-{% if result %}
-<div class="card">
-  <div class="card-head">
-    <span class="card-title">Результат: {{ result.op }}</span>
-    <span class="row">
-      <span class="badge {{ 'success' if result.ok else 'danger' }}">{{ 'успешно' if result.ok else 'ошибка' }}</span>
-      <span class="card-note">Код выхода {{ result.exit_code }}, отклик: {{ result.duration_ms }} мс</span>
-    </span>
-  </div>
-  <div class="card-body stack tight">
-    {% if result.files %}
-    <div class="row wrap">
-      {% for f in result.files %}
-      <a class="btn" href="{{ f.download_url }}" target="_blank">{{ icon('download') }}{{ f.name }}</a>
-      <a class="btn ghost" data-copy="{{ f.download_url }}" href="#">{{ icon('copy') }}<span data-label>Копировать</span></a>
-      {% endfor %}
-    </div>
-    {% endif %}
-    {% if result.stdout %}<pre class="out">{{ result.stdout }}</pre>{% endif %}
-    {% if result.stderr %}<pre class="out">{{ result.stderr }}</pre>{% endif %}
-    {% if result.error %}<pre class="out">{{ result.error }}</pre>{% endif %}
-  </div>
-</div>
+{% if prefill %}
+<div class="notice">{{ icon('refresh') }}<span>Форма «{{ prefill.op }}» заполнена параметрами запуска №{{ prefill.id }}. Поправьте и запустите.</span></div>
 {% endif %}
 
 <div class="grid-half">
 {% for name, op in ops.items() %}
-<div class="card">
+<div class="card" id="op-{{ name }}">
   <div class="card-head">
     <span class="card-title">{{ name }}</span>
     <span class="row">
@@ -49,30 +28,75 @@
   </div>
   <div class="card-body">
     <div class="muted text-sm">{{ op.description or "Без описания" }}</div>
+    {% set fill = prefill.params if prefill and prefill.op == name else {} %}
     <form method="post" action="/ui/ops/{{ name }}">
       {% for pname, p in op.params.items() %}
         {% if p.type == 'str' %}
           <label>{{ pname }} <span class="hint mono">{{ p.pattern.pattern }}</span></label>
-          <input type="text" name="{{ pname }}">
+          <input type="text" name="{{ pname }}" value="{{ fill.get(pname, '') }}">
         {% elif p.type == 'file' %}
           <label>{{ pname }} <span class="hint">Файл</span></label>
           <select name="{{ pname }}">
             <option value=""></option>
-            {% for f in files %}<option value="{{ f.token }}">{{ f.orig_name }}</option>{% endfor %}
+            {% for f in files %}<option value="{{ f.token }}" {{ 'selected' if f.token == fill.get(pname) }}>{{ f.orig_name }}</option>{% endfor %}
           </select>
         {% else %}
           <label>{{ pname }} <span class="hint">до {{ p.max_items }} файлов</span></label>
           <select name="{{ pname }}" multiple size="4" style="height:auto">
-            {% for f in files %}<option value="{{ f.token }}">{{ f.orig_name }}</option>{% endfor %}
+            {% for f in files %}<option value="{{ f.token }}" {{ 'selected' if f.token in (fill.get(pname) or []) }}>{{ f.orig_name }}</option>{% endfor %}
           </select>
         {% endif %}
       {% endfor %}
       <div class="form-actions">
         <button class="btn primary" data-busy="Выполняется...">{{ icon('play') }}Запустить</button>
+        {% if last.get(name) %}
+        {% set l = last[name] %}
+        <a class="hint" href="/ui/ops/run/{{ l.id }}">последний запуск: {{ l.started_at|ago }},
+          <span class="badge {{ 'success' if l.ok else 'danger' }}">{{ 'успешно' if l.ok else 'ошибка' }}</span></a>
+        {% endif %}
       </div>
     </form>
   </div>
 </div>
 {% endfor %}
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <span class="card-title">Последние запуски</span>
+    <span class="card-note">хранятся 30 дней, не больше 500</span>
+  </div>
+  {% if runs %}
+  <table>
+    <thead><tr>
+      <th class="w-60">№</th><th>Операция</th><th class="w-100">Итог</th>
+      <th class="num w-80">Код</th><th class="num w-80">мс</th>
+      <th class="w-180">Когда</th><th class="w-80">Откуда</th><th class="w-150"></th>
+    </tr></thead>
+    <tbody>
+    {% for r in runs %}
+    <tr>
+      <td class="mono">{{ r.id }}</td>
+      <td><a href="/ui/ops/run/{{ r.id }}">{{ r.op }}</a>
+        {% if r.files %}<span class="count" title="файлов">{{ r.files|length }}</span>{% endif %}</td>
+      <td><span class="badge {{ 'success' if r.ok else 'danger' }}">{{ 'успешно' if r.ok else 'ошибка' }}</span></td>
+      <td class="num mono">{{ r.exit_code }}</td>
+      <td class="num mono">{{ r.duration_ms }}</td>
+      <td>{{ r.started_at|dt }}<div class="hint">{{ r.started_at|ago }}</div></td>
+      <td class="muted text-sm">{{ 'панель' if r.source == 'ui' else 'API' }}</td>
+      <td><div class="actions">
+        <a class="btn ghost sm" href="/ui/ops/run/{{ r.id }}">открыть</a>
+        {% if r.op in ops %}
+        <form class="inline" method="post" action="/ui/ops/run/{{ r.id }}/repeat">
+          <button class="btn ghost sm" data-busy="…">{{ icon('refresh') }}повторить</button></form>
+        {% endif %}
+      </div></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">Запусков ещё не было.</div>
+  {% endif %}
 </div>
 {% endblock %}

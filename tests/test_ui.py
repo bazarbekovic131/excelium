@@ -488,7 +488,7 @@ def test_every_page_renders_clean(client):
     login = client.get("/ui/login")
     assert login.status_code == 200 and '<svg xmlns="http://www.w3.org/2000/svg" style="display:none"' in login.text
     _login(client)
-    pages = ["/ui", "/ui/jobs", "/ui/files", "/ui/ops", "/ui/render", "/ui/api",
+    pages = ["/ui", "/ui/log", "/ui/jobs", "/ui/files", "/ui/ops", "/ui/render", "/ui/api",
              "/ui/settings", "/ui/typst", "/ui/signers", "/ui/signers/sets",
              "/ui/signers/roles", "/ui/signers/rule/new", "/ui/signers/set/list_1",
              "/ui/opsedit/new"]

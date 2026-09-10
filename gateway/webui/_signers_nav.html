@@ -6,7 +6,7 @@
 </div>
 {%- endmacro %}
 
-{% macro role_picker(field, roles, selected, empty='Не печатать') %}
+{% macro role_picker(field, roles, selected, empty='Не печатать') -%}
 <div class="combo">
   <input type="text" data-filter-for="{{ field }}" placeholder="Поиск">
   <select name="{{ field }}">

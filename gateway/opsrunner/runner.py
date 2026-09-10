@@ -23,7 +23,10 @@ class OpsValidationError(Exception):
 
 
 def run_operation(op: Operation, params: dict, filestore: FileStore,
-                  *, client_ip: str = "") -> dict:
+                  *, client_ip: str = "", history=None, source: str = "ui") -> dict:
+    """history — OpsHistory: запуск записывается туда, а его номер
+    возвращается в result["run_id"]. Ошибки параметров в историю не
+    попадают: это не запуск."""
     values = _validate(op, params, filestore)
     audit_log("ops_start", op=op.name, params={k: str(v)[:200] for k, v in params.items()},
               ip=client_ip)
@@ -72,6 +75,8 @@ def run_operation(op: Operation, params: dict, filestore: FileStore,
               "files": files}
     if error:
         result["error"] = error
+    if history is not None:
+        result["run_id"] = history.add(result, params, ip=client_ip, source=source)
     return result
 
 

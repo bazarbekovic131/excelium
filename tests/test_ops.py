@@ -126,3 +126,59 @@ def test_blank_to_png_from_pdf(client):
     png_token = body["files"][0]["download_url"].rsplit("/", 1)[1]
     png = client.get(f"/files/{png_token}").content
     assert png.startswith(b"\x89PNG")
+
+
+def _admin(client):
+    from conftest import TOKEN_ADMIN
+    client.post("/ui/login", data={"token": TOKEN_ADMIN}, follow_redirects=False)
+
+
+def test_ops_run_redirects_to_detail_and_repeat(ops_client):
+    _admin(ops_client)
+    r = ops_client.post("/ui/ops/echo", data={"text": "привет"}, follow_redirects=False)
+    assert r.status_code == 302 and r.headers["location"] == "/ui/ops/run/1"
+    page = ops_client.get("/ui/ops/run/1")
+    assert page.status_code == 200 and "привет" in page.text and "Параметры" in page.text
+    # обновление страницы запуска не запускает команду заново
+    ops_client.get("/ui/ops/run/1")
+    assert len(ops_client.app.state.ops_history.recent()) == 1
+    r = ops_client.post("/ui/ops/run/1/repeat", follow_redirects=False)
+    assert r.headers["location"] == "/ui/ops/run/2"
+    runs = ops_client.app.state.ops_history.recent()
+    assert len(runs) == 2 and runs[0]["params"] == {"text": "привет"}
+    # список запусков и подстановка параметров в форму
+    listing = ops_client.get("/ui/ops").text
+    assert "Последние запуски" in listing and "последний запуск" in listing
+    filled = ops_client.get("/ui/ops?prefill=2").text
+    assert 'value="привет"' in filled and "заполнена параметрами запуска №2" in filled
+    # запуск через API тоже попадает в историю с пометкой источника
+    ops_client.post("/ops/echo", json={"params": {"text": "api"}}, headers=ops_headers())
+    assert ops_client.app.state.ops_history.recent()[0]["source"] == "api"
+    assert ops_client.get("/ui/ops/run/999", follow_redirects=True).status_code == 200
+
+
+def test_ops_validation_error_is_not_a_run(ops_client):
+    _admin(ops_client)
+    r = ops_client.post("/ui/ops/echo", data={"text": "x; rm -rf /"}, follow_redirects=True)
+    assert "Параметры не приняты" in r.text
+    assert ops_client.app.state.ops_history.recent() == []
+
+
+def test_ops_history_sweep_limits(ops_client):
+    from gateway.jobsqueue.db import connect
+    from gateway.opsrunner import history as h
+    store = ops_client.app.state.ops_history
+    result = {"op": "echo", "ok": True, "exit_code": 0, "duration_ms": 1,
+              "stdout": "x" * (h.OUTPUT_LIMIT + 10), "stderr": "", "files": []}
+    for _ in range(5):
+        store.add(result, {"text": "t"})
+    assert len(store.get(1)["stdout"]) == h.OUTPUT_LIMIT
+    with connect(ops_client.settings.db_path) as conn:
+        conn.execute("UPDATE ops_runs SET started_at = '2000-01-01T00:00:00+00:00' WHERE id = 1")
+    old_rows = h.KEEP_ROWS
+    h.KEEP_ROWS = 3
+    try:
+        removed = store.sweep()
+    finally:
+        h.KEEP_ROWS = old_rows
+    assert removed == 2 and [r["id"] for r in store.recent()] == [5, 4, 3]

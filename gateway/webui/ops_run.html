@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% from "_ops_result.html" import ops_result %}
+{% block title %}Запуск №{{ run.id }} — {{ run.op }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Запуск №{{ run.id }} · {{ run.op }}</h1>
+    <span class="sub">{{ run.started_at|dt }} ({{ run.started_at|ago }}) · источник: {{ 'панель' if run.source == 'ui' else 'API' }}{% if run.ip %} · {{ run.ip }}{% endif %}</span>
+  </div>
+  <div class="head-actions">
+    <a class="btn" href="/ui/ops">{{ icon('arrow-left') }}К операциям</a>
+    {% if can_repeat %}
+    <a class="btn" href="/ui/ops?prefill={{ run.id }}#op-{{ run.op }}">{{ icon('pencil') }}Открыть форму с этими параметрами</a>
+    <form method="post" action="/ui/ops/run/{{ run.id }}/repeat" class="inline">
+      <button class="btn primary" data-busy="Выполняется…">{{ icon('refresh') }}Повторить</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{{ ops_result(result) }}
+
+<div class="card">
+  <div class="card-head"><span class="card-title">Параметры</span></div>
+  {% if run.params %}
+  <table>
+    <thead><tr><th class="w-220">Параметр</th><th>Значение</th></tr></thead>
+    <tbody>
+    {% for k, v in run.params.items() %}
+    <tr><td class="mono">{{ k }}</td><td class="mono text-sm">{{ v if v is string else v|join(', ') }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">Без параметров.</div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -383,19 +383,17 @@ def files_pin_many(request: Request, tokens: list[str] = Form(default=[]),
 # --- операции -------------------------------------------------------------
 
 @router.get("/ui/ops")
-def ops_page(request: Request, flash: str = ""):
-    return _page(request, "ops.html", "ops", ops=request.app.state.ops,
-                 files=request.app.state.filestore.list_files(), result=None,
-                 flash=flash)
-
-
-@router.post("/ui/ops/{name}")
-async def ops_run(request: Request, name: str):
+def ops_page(request: Request, flash: str = "", flash_err: str = "", prefill: int = 0):
     state = request.app.state
-    op = state.ops.get(name)
-    if op is None:
-        return RedirectResponse("/ui/ops", status_code=302)
-    form = await request.form()
+    filled = state.ops_history.get(prefill) if prefill else None
+    return _page(request, "ops.html", "ops", ops=state.ops,
+                 files=state.filestore.list_files(), runs=state.ops_history.recent(limit=20),
+                 last=state.ops_history.last_by_op(),
+                 prefill=filled if filled and filled["op"] in state.ops else None,
+                 flash=flash, flash_err=bool(flash_err))
+
+
+def _form_params(op, form) -> dict:
     params = {}
     for pname, pdef in op.params.items():
         if pdef.type == "file_list":
@@ -406,16 +404,55 @@ async def ops_run(request: Request, name: str):
             value = str(form.get(pname) or "").strip()
             if value:
                 params[pname] = value
+    return params
+
+
+async def _run_and_redirect(request: Request, op, params: dict, *, repeat_of: int = 0):
+    """Запуск → страница запуска (PRG): обновление страницы не повторяет
+    команду, а результат не теряется."""
+    state = request.app.state
+    ip = request.client.host if request.client else ""
     try:
-        ip = request.client.host if request.client else ""
-        result = await run_in_threadpool(run_operation, op, params,
-                                         state.filestore, client_ip=ip)
-        flash, flash_err = "", False
+        result = await run_in_threadpool(run_operation, op, params, state.filestore,
+                                         client_ip=ip, history=state.ops_history,
+                                         source="ui")
     except OpsValidationError as exc:
-        result, flash, flash_err = None, f"Параметры не приняты: {exc}", True
-    return _page(request, "ops.html", "ops", ops=state.ops,
-                 files=state.filestore.list_files(), result=result,
-                 flash=flash, flash_err=flash_err)
+        return RedirectResponse(f"/ui/ops?flash=Параметры не приняты: {exc}&flash_err=1",
+                                status_code=302)
+    if repeat_of:
+        audit_log("ops_repeat", op=op.name, run_id=result["run_id"], repeat_of=repeat_of)
+    return RedirectResponse(f"/ui/ops/run/{result['run_id']}", status_code=302)
+
+
+@router.post("/ui/ops/{name}")
+async def ops_run(request: Request, name: str):
+    op = request.app.state.ops.get(name)
+    if op is None:
+        return RedirectResponse("/ui/ops", status_code=302)
+    form = await request.form()
+    return await _run_and_redirect(request, op, _form_params(op, form))
+
+
+@router.get("/ui/ops/run/{run_id}")
+def ops_run_page(request: Request, run_id: int):
+    state = request.app.state
+    run = state.ops_history.get(run_id)
+    if run is None:
+        return RedirectResponse("/ui/ops?flash=Такого запуска нет&flash_err=1",
+                                status_code=302)
+    return _page(request, "ops_run.html", "ops", run=run,
+                 result=run, can_repeat=run["op"] in state.ops)
+
+
+@router.post("/ui/ops/run/{run_id}/repeat")
+async def ops_run_repeat(request: Request, run_id: int):
+    state = request.app.state
+    run = state.ops_history.get(run_id)
+    if run is None or run["op"] not in state.ops:
+        return RedirectResponse("/ui/ops?flash=Повторить нечего: операции больше нет"
+                                "&flash_err=1", status_code=302)
+    return await _run_and_redirect(request, state.ops[run["op"]], run["params"],
+                                   repeat_of=run_id)
 
 
 # --- рендер ---------------------------------------------------------------

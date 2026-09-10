@@ -27,6 +27,7 @@ async def execute(name: str, request: Request, body: dict = Body(default={})):
     ip = request.client.host if request.client else ""
     try:
         return await run_in_threadpool(
-            run_operation, op, params, request.app.state.filestore, client_ip=ip)
+            run_operation, op, params, request.app.state.filestore, client_ip=ip,
+            history=request.app.state.ops_history, source="api")
     except OpsValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
