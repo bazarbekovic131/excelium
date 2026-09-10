@@ -1,24 +1,21 @@
 {% extends "base.html" %}
+{% from "_signers_nav.html" import nav %}
 {% block title %}Подписанты — Doc-V Gateway{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
     <h1>Подписанты</h1>
-    <span class="sub">кто подписывает реестры — состав знает шлюз, в Excel уходят готовые строки</span>
+    <span class="sub">кто подписывает реестры — люди из Структуры Doc-V, роли из должностей шлюза</span>
   </div>
   <div class="head-actions">
     <span class="chip neutral">компаний: {{ cards|length }}</span>
-    <span class="chip neutral">привязок: {{ stats.bindings }}</span>
-    <a class="btn" href="/ui/signers/binding/new">＋ Привязка</a>
+    <span class="chip neutral">правил: {{ stats.rules }}</span>
+    {% if stats.vacant %}<a class="chip warn" href="/ui/signers/roles">вакантных должностей: {{ stats.vacant }}</a>{% endif %}
+    <a class="btn" href="/ui/signers/rule/new">＋ Правило</a>
   </div>
 </div>
 
-<div class="subnav">
-  <a href="/ui/signers" class="{{ 'on' if tab == 'companies' }}">Компании</a>
-  <a href="/ui/signers/sets" class="{{ 'on' if tab == 'sets' }}">Наборы согласующих</a>
-  <a href="/ui/signers/positions" class="{{ 'on' if tab == 'positions' }}">Должности шлюза</a>
-  <a href="/ui/signers/people" class="{{ 'on' if tab == 'people' }}">Люди</a>
-</div>
+{{ nav(tab) }}
 {% if flash %}<div class="flash {{ 'err' if flash_err }}">{{ flash }}</div>{% endif %}
 
 <form class="filters" method="get" action="/ui/signers" data-no-lock>
@@ -26,18 +23,15 @@
          style="min-width:260px">
   <button class="btn ghost">Искать</button>
   {% if search %}<a class="muted" style="font-size:13px" href="/ui/signers">Сбросить</a>{% endif %}
-  <span class="chip neutral" style="margin-left:auto">показано: {{ bindings|length }}</span>
+  <span class="chip neutral" style="margin-left:auto">показано: {{ rules|length }}</span>
 </form>
 
 <div class="company-grid">
   {% for card in cards %}
-  <div class="card {{ 'picked' if card.company == company }}">
+  <div class="card">
     <div class="card-head">
       <span class="card-title" style="text-transform:none;letter-spacing:0">{{ card.company }}</span>
-      <span style="display:flex;gap:8px;align-items:center">
-        <span class="chip neutral">{{ card.count }}</span>
-        <a class="btn ghost sm" href="/ui/signers/company?name={{ card.company|urlencode }}">Открыть</a>
-      </span>
+      <a class="btn ghost sm" href="/ui/signers/company?name={{ card.company|urlencode }}">Открыть</a>
     </div>
     <div class="card-body">
       {% if card.whole %}
@@ -46,41 +40,40 @@
       <div class="pair"><span class="pair-key">Утверждаю</span>
         <span>{% if card.whole.right %}{{ card.whole.right.fio }}<span class="hint"> · {{ card.whole.right.position }}</span>{% else %}—{% endif %}</span></div>
       <div class="pair"><span class="pair-key">Набор</span>
-        <span><a href="/ui/signers/set/{{ card.whole.set_name }}">{{ card.whole.set_name }}</a>
-          <a class="hint" href="/ui/signers/binding/{{ card.whole.id }}">правка</a></span></div>
+        <span><a href="/ui/signers/set/{{ card.whole.set_name|urlencode }}">{{ card.whole.set_name }}</a></span></div>
       {% else %}
-      <div class="hint">Правила на всю компанию нет — только объекты ниже.</div>
+      <div class="hint">Правила на всю компанию нет — только объекты.</div>
       {% endif %}
       {% if card.objects %}
-      <div class="hint" style="margin-top:8px">Объекты со своим правилом: {{ card.objects|length }}</div>
+      <div class="hint" style="margin-top:8px">Объекты со своим правилом: {{ card.objects }}</div>
       {% endif %}
     </div>
   </div>
   {% else %}
-  <div class="card"><div class="card-body"><div class="empty">Привязок нет</div></div></div>
+  <div class="card"><div class="card-body"><div class="empty">Правил нет</div></div></div>
   {% endfor %}
 </div>
 
 <div class="card">
   <div class="card-head">
-    <span class="card-title">{{ ('Привязки: ' ~ company) if company else 'Все привязки' }}</span>
-    <span class="card-note">пустой объект — правило на всю компанию; строка с объектом сильнее</span>
+    <span class="card-title">Все правила</span>
+    <span class="card-note">пустой объект — правило на всю компанию; объект без своего подписанта берёт его оттуда</span>
   </div>
-  {% if bindings %}
+  {% if rules %}
   <table>
     <thead><tr>
       <th>Компания</th><th>Объект</th><th>Согласовано</th><th>Утверждаю</th>
       <th style="width:110px">Набор</th><th style="width:70px"></th>
     </tr></thead>
     <tbody>
-    {% for b in bindings %}
+    {% for b in rules %}
     <tr>
       <td>{{ b.company }}</td>
       <td>{{ b.object_name or "— вся компания" }}</td>
-      <td>{% if b.left %}<b>{{ b.left.fio }}</b><br><span class="muted" style="font-size:12px">{{ b.left.position }} {{ b.left.company }}</span>{% else %}—{% endif %}</td>
-      <td>{% if b.right %}<b>{{ b.right.fio }}</b><br><span class="muted" style="font-size:12px">{{ b.right.position }} {{ b.right.company }}</span>{% else %}—{% endif %}</td>
-      <td><a href="/ui/signers/set/{{ b.set_name }}">{{ b.set_name }}</a></td>
-      <td><a class="btn ghost sm" href="/ui/signers/binding/{{ b.id }}">правка</a></td>
+      <td>{% if b.left %}<b>{{ b.left.fio }}</b><br><span class="hint">{{ b.left.position }} {{ b.left.company }}</span>{% else %}—{% endif %}</td>
+      <td>{% if b.right %}<b>{{ b.right.fio }}</b><br><span class="hint">{{ b.right.position }} {{ b.right.company }}</span>{% else %}—{% endif %}</td>
+      <td><a href="/ui/signers/set/{{ b.set_name|urlencode }}">{{ b.set_name }}</a></td>
+      <td><a class="btn ghost sm" href="/ui/signers/rule/{{ b.id }}">правка</a></td>
     </tr>
     {% endfor %}
     </tbody>

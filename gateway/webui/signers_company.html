@@ -1,28 +1,29 @@
 {% extends "base.html" %}
+{% from "_signers_nav.html" import nav, role_picker %}
 {% block title %}{{ company }} — подписанты{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
     <h1>{{ company }}</h1>
-    <span class="sub">{{ rows|length }} привязок · утверждающий у компании один на все объекты</span>
+    <span class="sub">{{ rules|length }} правил · утверждающий у компании один на все объекты</span>
   </div>
   <div class="head-actions">
     <a class="btn ghost" href="/ui/signers">← Ко всем компаниям</a>
-    <a class="btn" href="/ui/signers/binding/new">＋ Привязка</a>
+    <a class="btn" href="/ui/signers/rule/new?company={{ company|urlencode }}">＋ Правило для объекта</a>
   </div>
 </div>
 
+{{ nav(tab) }}
 {% if flash %}<div class="flash {{ 'err' if flash_err }}">{{ flash }}</div>{% endif %}
 
 <div class="card">
   <div class="card-head">
-    <span class="card-title">Проставить во все привязки компании</span>
+    <span class="card-title">Проставить во все правила компании</span>
     <span class="card-note">меняются только отмеченные поля, остальные остаются как есть</span>
   </div>
   <div class="card-body">
     <form method="post" action="/ui/signers/company/apply">
       <input type="hidden" name="company" value="{{ company }}">
-
       {% for role, title in (('utverzhdayu', 'УТВЕРЖДАЮ — справа сверху'), ('soglasovano', 'СОГЛАСОВАНО — слева сверху')) %}
       <div style="padding-top:12px{% if not loop.first %};border-top:1px solid var(--line){% endif %}">
         <label style="display:flex;gap:8px;align-items:center">
@@ -30,48 +31,13 @@
                  style="width:auto;height:auto;box-shadow:none">
           {{ title }}
         </label>
-        <div class="grid-third">
-          <div class="combo">
-            <input type="text" data-filter-for="bulk-{{ role }}" placeholder="поиск по списку">
-            <select name="{{ role }}_slot" id="bulk-{{ role }}">
-              <option value="">— не печатать —</option>
-              <optgroup label="Должность шлюза ({{ position_cards|length }})">
-                {% for pos in position_cards %}
-                <option value="{{ pos.value }}" {{ 'selected' if pos.value == current[role] }}>
-                  {{ pos.name }}{% if pos.holder %} → {{ pos.holder }}{% else %} → никто не назначен{% endif %}
-                </option>
-                {% endfor %}
-              </optgroup>
-              <optgroup label="Сотрудник из Структуры ({{ staff|length }})">
-                {% for person in staff %}
-                <option value="{{ person.value }}" {{ 'selected' if person.value == current[role] }}>
-                  {{ person.fio }}{% if person.position %} · {{ person.position }}{% endif %}{% if person.department %} · {{ person.department }}{% endif %}
-                </option>
-                {% endfor %}
-              </optgroup>
-              <optgroup label="Должность в Структуре ({{ positions|length }})">
-                {% for pos in positions %}
-                <option value="{{ pos.value }}" {{ 'selected' if pos.value == current[role] }}>
-                  {{ pos.position }}{% if pos.department %} · {{ pos.department }}{% endif %}{% if pos.holders %} → {{ pos.holders|join(', ') }}{% endif %}
-                </option>
-                {% endfor %}
-              </optgroup>
-              <optgroup label="Человек из справочника шлюза ({{ people|length }})">
-                {% for x in people %}
-                <option value="p:{{ x.id }}" {{ 'selected' if 'p:' ~ x.id == current[role] }}>{{ x.fio }}</option>
-                {% endfor %}
-              </optgroup>
-            </select>
-          </div>
-          <input type="text" name="{{ role }}_position" list="gwpositions"
-                 placeholder="должность шлюза — она и печатается"
-                 value="{{ current[role ~ '_position'] }}">
+        <div class="grid-half">
+          {{ role_picker(role ~ '_role', roles, base[role ~ '_role']) }}
           <input type="text" name="{{ role }}_company" placeholder="компания в подписи"
-                 value="{{ current[role ~ '_company'] or company }}">
+                 value="{{ base[role ~ '_company'] or company }}">
         </div>
       </div>
       {% endfor %}
-
       <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--line)">
         <label style="display:flex;gap:8px;align-items:center">
           <input type="checkbox" name="apply_set" value="1"
@@ -80,13 +46,12 @@
         </label>
         <select name="set_name">
           {% for name in set_names %}
-          <option value="{{ name }}" {{ 'selected' if name == current.set_name }}>{{ name }}</option>
+          <option value="{{ name }}" {{ 'selected' if name == base.set_name }}>{{ name }}</option>
           {% endfor %}
         </select>
       </div>
-
       <div style="display:flex;gap:8px;margin-top:16px;align-items:center">
-        <button class="btn" data-busy="Применяем…">Применить ко всем {{ rows|length }}</button>
+        <button class="btn" data-busy="Применяем…">Применить ко всем {{ rules|length }}</button>
         <span class="hint">Ничего не отмечено — ничего и не изменится.</span>
       </div>
     </form>
@@ -95,7 +60,7 @@
 
 <div class="card">
   <div class="card-head">
-    <span class="card-title">Привязки компании</span>
+    <span class="card-title">Правила компании</span>
     <span class="card-note">пустой объект — правило на всю компанию; объект без своего подписанта берёт его оттуда</span>
   </div>
   <table>
@@ -104,20 +69,16 @@
       <th style="width:110px">Набор</th><th style="width:70px"></th>
     </tr></thead>
     <tbody>
-    {% for b in rows %}
+    {% for b in rules %}
     <tr>
       <td>{{ b.object_name or "— вся компания" }}</td>
       <td>{% if b.left %}<b>{{ b.left.fio }}</b><br><span class="hint">{{ b.left.position }}</span>{% else %}—{% endif %}</td>
       <td>{% if b.right %}<b>{{ b.right.fio }}</b><br><span class="hint">{{ b.right.position }}</span>{% else %}—{% endif %}</td>
-      <td><a href="/ui/signers/set/{{ b.set_name }}">{{ b.set_name }}</a></td>
-      <td><a class="btn ghost sm" href="/ui/signers/binding/{{ b.id }}">правка</a></td>
+      <td><a href="/ui/signers/set/{{ b.set_name|urlencode }}">{{ b.set_name }}</a></td>
+      <td><a class="btn ghost sm" href="/ui/signers/rule/{{ b.id }}">правка</a></td>
     </tr>
     {% endfor %}
     </tbody>
   </table>
 </div>
-
-<datalist id="gwpositions">
-  {% for name in gateway_positions %}<option value="{{ name }}">{% endfor %}
-</datalist>
 {% endblock %}

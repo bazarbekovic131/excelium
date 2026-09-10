@@ -16,5 +16,5 @@ def resolve(request: Request, company: str = "", object: str = "",
     if not company:
         return {"companies": [
             {"company": b["company"], "object": b["object_name"], "set": b["set_name"]}
-            for b in store.bindings()]}
+            for b in store.rules()]}
     return store.resolve(company, object, expense_type)

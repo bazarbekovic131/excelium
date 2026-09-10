@@ -338,283 +338,144 @@ def test_files_search_and_paging(client):
     assert "реестр.txt" in found and "Показать ещё" not in found
 
 
-def test_signers_page_lists_bindings(client):
+def test_signers_page_lists_rules(client):
     _login(client)
     r = client.get("/ui/signers")
-    assert r.status_code == 200
-    assert "Подписанты" in r.text and "Шар" in r.text
-    # поиск сужает список
+    assert r.status_code == 200 and "Подписанты" in r.text and "Шар" in r.text
     narrow = client.get("/ui/signers", params={"search": "СМУ Аргон"})
     assert narrow.status_code == 200 and "СМУ Аргон" in narrow.text
+    # вкладок три: людей отдельной страницей больше нет
+    assert 'class="subnav"' in r.text and "/ui/signers/people" not in r.text
 
 
-def test_signers_binding_edit_roundtrip(client):
+def test_signers_tabs_open(client):
+    _login(client)
+    for url, marker in (("/ui/signers", "Все правила"),
+                        ("/ui/signers/sets", "Наборы согласующих"),
+                        ("/ui/signers/roles", "Каталог"),
+                        ("/ui/signers/rule/new", "Новое правило"),
+                        ("/ui/signers/set/list_1", "Набор list_1")):
+        r = client.get(url)
+        assert r.status_code == 200, url
+        assert marker in r.text, url
+
+
+def test_rule_edit_roundtrip(client):
     _login(client)
     store = client.app.state.signers
-    person = store.people()[0]
-    r = client.post("/ui/signers/binding/save", follow_redirects=False, data={
-        "binding_id": "", "company": "ТОО «Новая»", "object_name": "",
+    role = store.roles()[0]["name"]
+    r = client.post("/ui/signers/rule/save", follow_redirects=False, data={
+        "rule_id": "", "company": "ТОО «Новая»", "object_name": "",
         "set_name": sorted(store.sets())[0],
-        "soglasovano_slot": "", "soglasovano_position": "", "soglasovano_company": "",
-        "utverzhdayu_slot": f"p:{person['id']}", "utverzhdayu_position": "Директор",
-        "utverzhdayu_company": "ТОО «Новая»"})
+        "soglasovano_role": "", "soglasovano_company": "",
+        "utverzhdayu_role": role, "utverzhdayu_company": "ТОО «Новая»"})
     assert r.status_code == 302
     resolved = store.resolve("ТОО «Новая»")
-    assert resolved["utverzhdayu"]["position"] == "Директор"
-    assert resolved["coordinators"]
-
-    binding = next(b for b in store.bindings() if b["company"] == "ТОО «Новая»")
-    page = client.get(f"/ui/signers/binding/{binding['id']}")
-    assert page.status_code == 200 and "Директор" in page.text
-
-    client.post(f"/ui/signers/binding/delete/{binding['id']}", follow_redirects=False)
+    assert resolved["utverzhdayu"]["fio"] and resolved["coordinators"]
+    rule = next(b for b in store.rules() if b["company"] == "ТОО «Новая»")
+    page = client.get(f"/ui/signers/rule/{rule['id']}")
+    assert page.status_code == 200 and "Как это ляжет в реестр" in page.text
+    client.post(f"/ui/signers/rule/delete/{rule['id']}", follow_redirects=False)
     assert store.resolve("ТОО «Новая»")["utverzhdayu"] is None
 
 
-def test_signers_set_edit_changes_registry_signatures(client):
+def test_structura_holder_is_visible_in_the_table(client):
+    """В таблице показывается то, что напечатается: имя из Структуры."""
     _login(client)
     store = client.app.state.signers
-    name = sorted(store.sets())[0]
-    page = client.get(f"/ui/signers/set/{name}")
-    assert page.status_code == 200
-    person = store.people()[0]
-    r = client.post(f"/ui/signers/set/{name}/save", follow_redirects=False, data={
-        "slot": f"p:{person['id']}", "position": "Проверяющий",
-        "print_company": "ТОО «Тест»", "mark": "", "skip_expense_types": ""})
-    assert r.status_code == 302
-    entries = store.sets()[name]
-    assert len(entries) == 1 and entries[0]["position"] == "Проверяющий"
-
-
-def test_signers_link_without_directory_says_so(client):
-    _login(client)
-    r = client.post("/ui/signers/link", follow_redirects=True)
-    assert r.status_code == 200 and "Выгрузите её" in r.text
-
-
-def test_signers_link_reports_what_it_found(client):
-    _login(client)
     client.post("/directory/structura", headers=docv_headers(), json={"items": [
-        {"uid": "u-1", "display_name": "Аманов Бауыржан Шарипович",
-         "position": "Генеральный директор", "department": "Дирекция"},
-        {"uid": "u-2", "display_name": "Иванов Иван Иванович",
-         "position": "Кладовщик", "department": "Склад"}]})
-    r = client.post("/ui/signers/link", follow_redirects=True)
-    assert "Структура: 2 сотрудников" in r.text
-    assert "Узнали 1" in r.text and "переименовано 1" in r.text
-    assert "Не нашли в Doc-V" in r.text
+        {"uid": "u-900", "display_name": "Табличный Т.Т. (Директор)", "position": "Директор"}]})
+    store.save_role("Витринный директор", title="Генеральный директор", holder_uid="u-900")
+    store.save_rule(company="ТОО «Витрина»", object_name="", set_name="list_1",
+                    utverzhdayu="Витринный директор")
+    html = client.get("/ui/signers", params={"search": "Витрина"}).text
+    assert "Табличный Т.Т." in html and "Генеральный директор" in html
+    assert "Табличный Т.Т. (Директор)" not in html
 
 
-def test_signers_new_binding_form_opens(client):
-    """Форма новой привязки: пустая заготовка обязана знать все поля."""
+def test_roles_saved_in_one_go_with_rename(client):
     _login(client)
-    r = client.get("/ui/signers/binding/new")
-    assert r.status_code == 200, r.text
-    assert "Новая привязка" in r.text
-    assert "Сотрудник из Структуры" in r.text and "Должность в Структуре" in r.text
+    store = client.app.state.signers
+    client.post("/directory/structura", headers=docv_headers(), json={"items": [
+        {"uid": "u-700", "display_name": "Кандидат К.К.", "position": "Директор"}]})
+    first = store.roles()[0]["name"]
+    data = {"old_name": [first, ""], "name": ["Переименованная", "Совсем новая"],
+            "title": ["", "Печатное"], "holder_uid": ["u-700", ""],
+            "holder_name": ["", "Вписанный В.В."]}
+    r = client.post("/ui/signers/roles/save", data=data, follow_redirects=True)
+    assert "Сохранено должностей: 2" in r.text and "переименовано 1" in r.text
+    roles = {x["name"]: x for x in store.roles()}
+    assert first not in roles and roles["Переименованная"]["holder"] == "Кандидат К.К."
+    assert roles["Совсем новая"]["title"] == "Печатное"
+    assert roles["Совсем новая"]["holder"] == "Вписанный В.В."
 
 
-def test_every_employee_is_selectable_even_with_shared_position(client):
-    """Сотрудников больше сотни, должности повторяются: в списке должен
-    быть каждый человек отдельной строкой, плюс поиск по списку."""
+def test_role_delete_from_list_is_guarded(client):
+    _login(client)
+    store = client.app.state.signers
+    used = next(r["name"] for r in store.roles() if r["used"])
+    r = client.post("/ui/signers/roles/delete", data={"delete": used}, follow_redirects=True)
+    assert "ссылаются подписи" in r.text
+    store.save_role("Лишняя")
+    r = client.post("/ui/signers/roles/delete", data={"delete": "Лишняя"}, follow_redirects=True)
+    assert "убрана" in r.text and not any(x["name"] == "Лишняя" for x in store.roles())
+
+
+def test_roles_page_lists_every_employee_with_search(client):
+    """Сотрудников больше сотни, должности повторяются: каждый — отдельной
+    строкой, и над списком есть поиск."""
     _login(client)
     items = [{"uid": f"uid-{i:03d}", "display_name": f"Сотрудник {i:03d}",
-              "position": "Прораб" if i % 2 else "Инженер ПТО",
-              "department": "Участок" if i % 3 else "Администрация"}
-             for i in range(120)]
+              "position": "Прораб" if i % 2 else "Инженер ПТО"} for i in range(120)]
     client.post("/directory/structura", headers=docv_headers(), json={"items": items})
-    html = client.get("/ui/signers/binding/new").text
-    assert html.count('<option value="r:uid-') == 240   # 120 человек на два блока
-    assert "Сотрудник из Структуры (120)" in html
-    assert 'data-filter-for="slot-utverzhdayu"' in html
-    # двое с одной должностью — две отдельные строки, а не одна
-    assert "Сотрудник 001" in html and "Сотрудник 003" in html
-    # должности при этом сгруппированы: их единицы, а не сто двадцать
-    assert len(client.app.state.signers.positions()) < 10
+    html = client.get("/ui/signers/roles").text
+    per_row = html.count('<option value="uid-000"')
+    assert per_row >= 1 and html.count('<option value="uid-') == 120 * per_row
+    assert 'data-filter-for="holder_uid"' in html
+    assert "в Структуре: 120 сотрудников" in html
 
 
-def test_person_delete_guarded_by_usage(client):
-    _login(client)
-    store = client.app.state.signers
-    used = next(p for p in store.people() if store.person_usage(p["id"]))
-    r = client.post(f"/ui/signers/person/delete/{used['id']}", follow_redirects=True)
-    assert "Сначала уберите его из подписей" in r.text
-    assert any(p["id"] == used["id"] for p in store.people())
-
-    free_id = store.save_person(None, "Никому Не Нужный", "Стажёр")
-    client.post(f"/ui/signers/person/delete/{free_id}", follow_redirects=False)
-    assert not any(p["id"] == free_id for p in store.people())
-
-
-def test_set_saves_rows_as_sent(client):
+def test_set_editor_saves_rows_as_sent(client):
     _login(client)
     store = client.app.state.signers
     name = sorted(store.sets())[0]
     before = store.sets()[name]
     assert len(before) > 1
     kept = before[1:]           # первую строку убрали в браузере
-    data = {"slot": [f"p:{e['person_id']}" for e in kept],
-            "position": [e["position"] for e in kept],
+    data = {"role": [e["role"] for e in kept],
             "print_company": [e["print_company"] for e in kept],
             "mark": [e["mark"] for e in kept],
             "skip_expense_types": [e["skip_expense_types"] for e in kept]}
-    client.post(f"/ui/signers/set/{name}/save", data=data, follow_redirects=False)
+    r = client.post(f"/ui/signers/set/{name}/save", data=data, follow_redirects=True)
+    assert f"{len(kept)} подписей" in r.text
     after = store.sets()[name]
-    assert len(after) == len(before) - 1
-    assert after[0]["person_id"] == before[1]["person_id"]
-
-
-def test_position_assign_and_delete_from_ui(client):
-    _login(client)
-    store = client.app.state.signers
-    client.post("/directory/structura", headers=docv_headers(), json={"items": [
-        {"uid": "u-500", "display_name": "Назначенный Н.Н.", "position": "Директор"}]})
-    client.post("/ui/signers/position", data={"name": "Первый подписант"},
-                follow_redirects=False)
-    r = client.post("/ui/signers/position/assign",
-                    data={"name": "Первый подписант", "slot": "r:u-500||"},
-                    follow_redirects=True)
-    assert "Назначение для «Первый подписант» сохранено" in r.text
-    card = next(c for c in store.position_cards() if c["name"] == "Первый подписант")
-    assert card["holder"] == "Назначенный Н.Н."
-    # должность видна в списке выбора подписанта
-    assert "Первый подписант → Назначенный Н.Н." in client.get(
-        "/ui/signers/binding/new").text.replace("\n", " ").replace("  ", " ")
-    # используемую должность удалить нельзя
-    store.save_binding(company="ТОО «Занято»", object_name="", set_name="list_1",
-                       soglasovano={"ref": "gw:Первый подписант", "position": "",
-                                    "company": "ТОО «Занято»"}, utverzhdayu=None)
-    r = client.post("/ui/signers/position", data={"delete": "Первый подписант"},
-                    follow_redirects=True)
-    assert "ссылаются 1 подписей" in r.text
+    assert [e["role"] for e in after] == [e["role"] for e in kept]
+    html = client.get(f"/ui/signers/set/{name}").text
+    assert 'id="row-template"' in html and "data-add-row" in html and "data-move-row" in html
 
 
 def test_company_bulk_apply_sets_one_signer_everywhere(client):
-    """Утверждающий у компании один на все объекты — правится разом."""
     _login(client)
     store = client.app.state.signers
     company = 'ТОО "СМУ Аргон"'
-    rows = store.company_bindings(company)
-    assert len(rows) > 3, "нужна компания с несколькими объектами"
-
+    rows = store.company_rules(company)
+    assert len(rows) > 3
     page = client.get("/ui/signers/company", params={"name": company})
     assert page.status_code == 200 and "Применить ко всем" in page.text
-
-    person = store.people()[0]
+    store.save_role("Единый директор", holder_name="Единый Е.Е.")
     r = client.post("/ui/signers/company/apply", follow_redirects=True, data={
         "company": company, "apply_utverzhdayu": "1",
-        "utverzhdayu_slot": f"p:{person['id']}",
-        "utverzhdayu_position": "Единый директор", "utverzhdayu_company": company})
-    assert f"Проставлено в {len(rows)} привязок" in r.text
-    for row in store.company_bindings(company):
-        resolved = store.resolve(row["company"], row["object_name"])
-        assert resolved["utverzhdayu"]["fio"] == person["fio"]
-        assert resolved["utverzhdayu"]["position"] == "Единый директор"
-    # согласовано не трогали
-    assert any(store.resolve(r["company"], r["object_name"])["soglasovano"]
-               for r in store.company_bindings(company))
-
-
-def test_company_bulk_apply_without_checkboxes_changes_nothing(client):
-    _login(client)
-    store = client.app.state.signers
-    company = 'ТОО "СМУ Аргон"'
-    before = store.company_bindings(company)
+        "utverzhdayu_role": "Единый директор", "utverzhdayu_company": company})
+    assert f"Проставлено в {len(rows)} правил" in r.text
+    for row in store.company_rules(company):
+        top = store.resolve(row["company"], row["object_name"])["utverzhdayu"]
+        assert top["fio"] == "Единый Е.Е." and top["position"] == "Единый директор"
     r = client.post("/ui/signers/company/apply", follow_redirects=True,
-                    data={"company": company, "utverzhdayu_slot": "", "set_name": "list_1"})
+                    data={"company": company, "utverzhdayu_role": ""})
     assert "ничего не изменилось" in r.text
-    assert store.company_bindings(company) == before
 
 
-def test_signers_tabs_open_separately(client):
-    """Люди, должности и наборы — отдельные страницы: листать компании
-    ради правки человека невозможно."""
+def test_roles_link_without_structura_says_so(client):
     _login(client)
-    for url, marker in (("/ui/signers", "Компании"),
-                        ("/ui/signers/sets", "Наборы согласующих"),
-                        ("/ui/signers/positions", "Должности шлюза"),
-                        ("/ui/signers/people", "Люди")):
-        r = client.get(url)
-        assert r.status_code == 200, url
-        assert marker in r.text
-        assert 'class="subnav"' in r.text
-    # на странице компаний нет ни людей, ни каталога должностей
-    companies = client.get("/ui/signers").text
-    assert "Новый человек: ФИО" not in companies
-    assert "Новая должность" not in companies
-
-
-def test_structura_choice_is_visible_in_the_table(client):
-    """Выбор из Структуры раньше показывался в таблице прочерком:
-    строки собирались только по людям справочника."""
-    _login(client)
-    store = client.app.state.signers
-    client.post("/directory/structura", headers=docv_headers(), json={"items": [
-        {"uid": "u-900", "display_name": "Табличный Т.Т.", "position": "Директор"}]})
-    store.save_binding(company="ТОО «Витрина»", object_name="", set_name="list_1",
-                       soglasovano=None,
-                       utverzhdayu={"ref": "u-900", "position": "Генеральный директор",
-                                    "company": "ТОО «Витрина»"})
-    html = client.get("/ui/signers", params={"search": "Витрина"}).text
-    assert "Табличный Т.Т." in html
-    assert "Генеральный директор" in html
-
-
-def test_people_saved_in_one_go(client):
-    """Правки существующих и новые люди — одним сохранением."""
-    _login(client)
-    store = client.app.state.signers
-    people = store.people()[:3]
-    data = {"person_id": [str(p["id"]) for p in people] + [""],
-            "fio": [p["fio"] + " (правка)" for p in people] + ["Новенький Н.Н."],
-            "position": [p["position"] for p in people] + ["Стажёр"]}
-    r = client.post("/ui/signers/people/save", data=data, follow_redirects=True)
-    assert "Сохранено записей: 4" in r.text and "новых 1" in r.text
-    names = {p["fio"] for p in store.people()}
-    assert "Новенький Н.Н." in names
-    assert all(p["fio"] + " (правка)" in names for p in people)
-
-
-def test_people_skip_empty_rows(client):
-    _login(client)
-    store = client.app.state.signers
-    before = len(store.people())
-    client.post("/ui/signers/people/save",
-                data={"person_id": ["", ""], "fio": ["", "  "], "position": ["", ""]},
-                follow_redirects=False)
-    assert len(store.people()) == before
-
-
-def test_positions_saved_in_one_go(client):
-    _login(client)
-    store = client.app.state.signers
-    client.post("/directory/structura", headers=docv_headers(), json={"items": [
-        {"uid": "u-700", "display_name": "Кандидат К.К.", "position": "Директор"}]})
-    existing = store.gateway_positions()[:2]
-    data = {"name": existing + ["Новая должность", "  "],
-            "slot": ["r:u-700||", ""] + ["r:u-700||", ""]}
-    r = client.post("/ui/signers/positions/save", data=data, follow_redirects=True)
-    assert "Сохранено должностей: 3" in r.text
-    cards = {c["name"]: c for c in store.position_cards()}
-    assert cards[existing[0]]["holder"] == "Кандидат К.К."
-    assert cards["Новая должность"]["holder"] == "Кандидат К.К."
-    assert "  " not in cards
-
-
-def test_position_delete_from_list(client):
-    _login(client)
-    store = client.app.state.signers
-    store.add_position("Лишняя должность")
-    r = client.post("/ui/signers/positions/delete", data={"delete": "Лишняя должность"},
-                    follow_redirects=True)
-    assert "убрана" in r.text
-    assert "Лишняя должность" not in store.gateway_positions()
-
-
-def test_set_editor_has_no_reload_buttons(client):
-    """Строки набора добавляются в браузере, а не перезагрузкой страницы."""
-    _login(client)
-    html = client.get("/ui/signers/set/list_1").text
-    assert 'id="row-template"' in html and "data-add-row" in html
-    assert "data-drop-row" in html and 'data-move-row="up"' in html
-    assert "?add=" not in html
+    r = client.post("/ui/signers/roles/link", follow_redirects=True)
+    assert "Выгрузите её" in r.text

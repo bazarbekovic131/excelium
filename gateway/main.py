@@ -58,10 +58,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # структура — из data/signers_seed.yaml, ФИО и должности — со
         # скрытого листа шаблона. Дальше состав живёт в базе и правится
         # в /ui, а листы СПР в выдачу больше не попадают.
+        app.state.signers.migrate_legacy()
         if app.state.signers.is_empty():
             app.state.signers.seed(APP_DIR / "data" / "signers_seed.yaml",
                                    app.state.template_inner)
-        app.state.signers.link_directory()
+        app.state.signers.link_by_name()
         app.state.typst_store = TypstStore(settings.db_path)
         # list_soglasovaniya переименован в contract_card: переносим вместе
         # с правками администратора, чтобы они не потерялись

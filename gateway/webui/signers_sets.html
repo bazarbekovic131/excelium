@@ -1,40 +1,44 @@
 {% extends "base.html" %}
+{% from "_signers_nav.html" import nav %}
 {% block title %}Наборы согласующих — Doc-V Gateway{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
     <h1>Наборы согласующих</h1>
-    <span class="sub">подписи под таблицей реестра, по порядку</span>
+    <span class="sub">подписи под таблицей реестра, по порядку · {{ sets|length }} наборов</span>
   </div>
-  <div class="head-actions"><span class="chip neutral">наборов: {{ sets|length }}</span></div>
+  <div class="head-actions">
+    <form method="post" action="/ui/signers/sets/new" style="display:flex;gap:6px">
+      <input type="text" name="name" placeholder="имя нового набора" required style="width:200px">
+      <button class="btn">＋ Набор</button>
+    </form>
+  </div>
 </div>
 
-<div class="subnav">
-  <a href="/ui/signers" class="{{ 'on' if tab == 'companies' }}">Компании</a>
-  <a href="/ui/signers/sets" class="{{ 'on' if tab == 'sets' }}">Наборы согласующих</a>
-  <a href="/ui/signers/positions" class="{{ 'on' if tab == 'positions' }}">Должности шлюза</a>
-  <a href="/ui/signers/people" class="{{ 'on' if tab == 'people' }}">Люди</a>
-</div>
-
+{{ nav(tab) }}
 {% if flash %}<div class="flash {{ 'err' if flash_err }}">{{ flash }}</div>{% endif %}
 
-<div class="card">
-  <div class="card-head">
-    <span class="card-title">Наборы согласующих</span>
-    <span class="card-note">подписи под таблицей, по порядку</span>
-  </div>
-  <div class="card-body">
-    {% for name, entries in sets.items() %}
-    <div style="margin-bottom:12px">
-      <a href="/ui/signers/set/{{ name }}"><b>{{ name }}</b></a>
-      <span class="muted" style="font-size:12px"> — {{ entries|length }} подписей</span>
-      <div class="muted" style="font-size:12px;margin-top:2px">
-        {{ entries|map(attribute='fio')|join(' · ') }}
-      </div>
+<div class="company-grid">
+  {% for name, lines in sets.items() %}
+  <div class="card">
+    <div class="card-head">
+      <span class="card-title" style="text-transform:none;letter-spacing:0">{{ name }}</span>
+      <span style="display:flex;gap:8px;align-items:center">
+        <span class="chip neutral" title="правил ссылается на набор">{{ used.get(name, 0) }}</span>
+        <a class="btn ghost sm" href="/ui/signers/set/{{ name|urlencode }}">Открыть</a>
+      </span>
     </div>
-    {% else %}
-    <div class="empty">Наборов нет</div>
-    {% endfor %}
+    <div class="card-body">
+      {% for line in lines %}
+      <div class="pair"><span class="pair-key">{{ loop.index }}.</span>
+        <span>{{ line.holder or '—' }}<span class="hint"> · {{ line.title }}{% if line.print_company %} {{ line.print_company }}{% endif %}</span></span></div>
+      {% else %}
+      <div class="hint">Пусто</div>
+      {% endfor %}
+    </div>
   </div>
+  {% else %}
+  <div class="card"><div class="card-body"><div class="empty">Наборов нет</div></div></div>
+  {% endfor %}
 </div>
 {% endblock %}

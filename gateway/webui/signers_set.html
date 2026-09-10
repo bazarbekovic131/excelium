@@ -1,40 +1,11 @@
 {% extends "base.html" %}
+{% from "_signers_nav.html" import nav, role_picker %}
 {% block title %}Набор {{ name }} — Doc-V Gateway{% endblock %}
-
-{% macro chooser(selected) -%}
-<div class="combo">
-  <input type="text" data-filter-for="slot" placeholder="поиск: фамилия, должность, отдел">
-  <select name="slot">
-    <option value="">— пусто —</option>
-    <optgroup label="Должность шлюза ({{ position_cards|length }})">
-      {% for pos in position_cards %}
-      <option value="{{ pos.value }}" {{ 'selected' if pos.value == selected }}>{{ pos.name }}{% if pos.holder %} → {{ pos.holder }}{% else %} → никто не назначен{% endif %}</option>
-      {% endfor %}
-    </optgroup>
-    <optgroup label="Сотрудник из Структуры ({{ staff|length }})">
-      {% for person in staff %}
-      <option value="{{ person.value }}" {{ 'selected' if person.value == selected }}>{{ person.fio }}{% if person.position %} · {{ person.position }}{% endif %}{% if person.department %} · {{ person.department }}{% endif %}</option>
-      {% endfor %}
-    </optgroup>
-    <optgroup label="Должность в Структуре ({{ positions|length }})">
-      {% for pos in positions %}
-      <option value="{{ pos.value }}" {{ 'selected' if pos.value == selected }}>{{ pos.position }}{% if pos.department %} · {{ pos.department }}{% endif %}{% if pos.holders %} → {{ pos.holders|join(', ') }}{% endif %}</option>
-      {% endfor %}
-    </optgroup>
-    <optgroup label="Человек из справочника шлюза ({{ people|length }})">
-      {% for x in people %}
-      <option value="p:{{ x.id }}" {{ 'selected' if 'p:' ~ x.id == selected }}>{{ x.fio }}</option>
-      {% endfor %}
-    </optgroup>
-  </select>
-</div>
-{%- endmacro %}
-
 {% block content %}
 <div class="page-head">
   <div>
     <h1>Набор {{ name }}</h1>
-    <span class="sub">подписи под таблицей реестра, сверху вниз · используют {{ used }} привязок</span>
+    <span class="sub">подписи под таблицей реестра, сверху вниз · используют {{ used }} правил</span>
   </div>
   <div class="head-actions">
     <a class="btn ghost" href="/ui/signers/sets">← Ко всем наборам</a>
@@ -42,9 +13,10 @@
   </div>
 </div>
 
+{{ nav(tab) }}
 {% if flash %}<div class="flash {{ 'err' if flash_err }}">{{ flash }}</div>{% endif %}
 
-<form method="post" action="/ui/signers/set/{{ name }}/save" id="setform">
+<form method="post" action="/ui/signers/set/{{ name|urlencode }}/save" id="setform">
 <div class="card">
   <div class="card-head">
     <span class="card-title">Состав</span>
@@ -52,19 +24,17 @@
   </div>
   <table id="rowlist">
     <thead><tr>
-      <th style="width:30px">№</th><th style="width:300px">Кто подписывает</th>
-      <th>Должность шлюза — печатается</th>
-      <th>Компания в подписи</th><th style="width:120px">Заголовок над подписью</th>
-      <th style="width:170px">Пропустить при затратах</th>
+      <th style="width:30px">№</th><th style="width:360px">Должность</th>
+      <th>Компания в подписи</th><th style="width:140px">Заголовок над подписью</th>
+      <th style="width:180px">Пропустить при затратах</th>
       <th style="width:104px"></th>
     </tr></thead>
     <tbody>
     {% for row in rows %}
     <tr>
       <td class="muted" data-num>{{ loop.index }}</td>
-      <td>{{ chooser(row.slot) }}</td>
-      <td><input type="text" name="position" value="{{ row.position }}"
-                 list="gwpositions" placeholder="{{ row.default_position }}"></td>
+      <td>{{ role_picker('role', roles, row.role, empty='— убрать строку —') }}
+        {% if row.missing %}<span class="chip danger">должности «{{ row.role }}» больше нет</span>{% endif %}</td>
       <td><input type="text" name="print_company" value="{{ row.print_company }}"></td>
       <td><input type="text" name="mark" value="{{ row.mark }}"></td>
       <td><input type="text" name="skip_expense_types" value="{{ row.skip_expense_types }}"></td>
@@ -82,18 +52,23 @@
     <div style="display:flex;gap:8px;align-items:center">
       <button class="btn" data-busy="Сохраняем…">Сохранить набор</button>
       <button class="btn ghost" data-add-row>＋ Добавить подпись</button>
-      <span class="hint">Порядок строк — порядок подписей в реестре.</span>
+      <span class="hint">Порядок строк — порядок подписей в реестре. Виды затрат — через запятую.</span>
     </div>
   </div>
 </div>
 </form>
 
+{% if rows and not used %}
+<form method="post" action="/ui/signers/set/{{ name|urlencode }}/delete" style="margin-top:10px"
+      onsubmit="return confirm('Удалить набор {{ name }}?')">
+  <button class="btn ghost">Удалить набор</button>
+</form>
+{% endif %}
+
 <template id="row-template">
   <tr>
     <td class="muted" data-num></td>
-    <td>{{ chooser('') }}</td>
-    <td><input type="text" name="position" list="gwpositions"
-               placeholder="должность шлюза"></td>
+    <td>{{ role_picker('role', roles, '', empty='— выберите должность —') }}</td>
     <td><input type="text" name="print_company"></td>
     <td><input type="text" name="mark"></td>
     <td><input type="text" name="skip_expense_types"></td>
@@ -104,8 +79,4 @@
     </td>
   </tr>
 </template>
-
-<datalist id="gwpositions">
-  {% for name in gateway_positions %}<option value="{{ name }}">{% endfor %}
-</datalist>
 {% endblock %}

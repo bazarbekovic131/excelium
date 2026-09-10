@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% from "_signers_nav.html" import nav, role_picker %}
+{% block title %}Правило подписей — Doc-V Gateway{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ rule.company or "Новое правило" }}</h1>
+    <span class="sub">{{ rule.object_name or "правило на всю компанию" }}</span>
+  </div>
+  <div class="head-actions">
+    {% if rule.company %}
+    <a class="btn ghost" href="/ui/signers/company?name={{ rule.company|urlencode }}">← К компании</a>
+    {% else %}
+    <a class="btn ghost" href="/ui/signers">← К списку</a>
+    {% endif %}
+  </div>
+</div>
+
+{{ nav(tab) }}
+{% if flash %}<div class="flash {{ 'err' if flash_err }}">{{ flash }}</div>{% endif %}
+
+<div class="card">
+  <div class="card-head">
+    <span class="card-title">Кто подписывает</span>
+    <span class="card-note">подпись — это должность шлюза; ФИО и название печатаются из неё</span>
+  </div>
+  <div class="card-body">
+    <form method="post" action="/ui/signers/rule/save">
+      <input type="hidden" name="rule_id" value="{{ rule.id or '' }}">
+      <div class="grid-half">
+        <div>
+          <label>Компания <span class="hint">как приходит из Doc-V</span></label>
+          <input type="text" name="company" value="{{ rule.company }}" required>
+        </div>
+        <div>
+          <label>Объект <span class="hint">пусто — правило на всю компанию</span></label>
+          <input type="text" name="object_name" value="{{ rule.object_name }}">
+        </div>
+      </div>
+
+      <label>Набор согласующих <span class="hint">подписи под таблицей</span></label>
+      <select name="set_name">
+        {% for name in set_names %}
+        <option value="{{ name }}" {{ 'selected' if name == rule.set_name }}>{{ name }}</option>
+        {% endfor %}
+      </select>
+
+      {% for role, title in (('soglasovano', 'СОГЛАСОВАНО — слева сверху'), ('utverzhdayu', 'УТВЕРЖДАЮ — справа сверху')) %}
+      <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--line)">
+        <label>{{ title }}
+          {% if rule.object_name %}<span class="hint">пусто — берётся из правила компании</span>{% endif %}</label>
+        <div class="grid-half">
+          {{ role_picker(role ~ '_role', roles, rule[role ~ '_role']) }}
+          <input type="text" name="{{ role }}_company" placeholder="компания в подписи (пусто — компания реестра)"
+                 value="{{ rule[role ~ '_company'] }}">
+        </div>
+      </div>
+      {% endfor %}
+
+      <div style="display:flex;gap:8px;margin-top:16px;align-items:center">
+        <button class="btn" data-busy="Сохраняем…">Сохранить</button>
+        <a class="hint" href="/ui/signers/roles">Нужной должности нет? Заведите её на вкладке «Должности».</a>
+      </div>
+    </form>
+    {% if rule.id %}
+    <form method="post" action="/ui/signers/rule/delete/{{ rule.id }}" style="margin-top:10px"
+          onsubmit="return confirm('Удалить правило? Реестры по нему выйдут без подписей.')">
+      <button class="btn ghost">Удалить правило</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{% if preview %}
+<div class="card">
+  <div class="card-head"><span class="card-title">Как это ляжет в реестр</span></div>
+  <div class="card-body"><pre class="out">{{ preview }}</pre></div>
+</div>
+{% endif %}
+{% endblock %}

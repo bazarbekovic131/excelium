@@ -1,25 +1,20 @@
-"""Кто подписывает реестр: собственный справочник шлюза.
+"""Кто подписывает реестр: справочник подписантов шлюза.
 
-Раньше состав подписей жил в двух местах сразу — матрица на сервере
-задавала номера строк, а ФИО и должности лежали на скрытом листе
-СПР_ПОДПИСАНТОВ внутри шаблона Excel. Реестр из-за этого менялся задним
-числом: правка листа переписывала подписи в уже выпущенных файлах.
+Doc-V про подписи ничего не присылает — наоборот, может спросить
+(GET /signers). Источников правды два, и они не пересекаются:
 
-Теперь состав знает шлюз, а в Excel уходят готовые строки. Doc-V ничего
-про подписи не присылает — наоборот, может спросить: GET /signers.
+- **люди** — Структура Doc-V: кто существует, как зовут, uid.
+  Своего списка людей у шлюза нет;
+- **должности шлюза** — в каком качестве человек подписывает: ключ,
+  печатаемое название и кто занимает (сотрудник Структуры). У должности
+  ровно один человек: подпись в реестре — одна строка, один человек.
+  Если печатаемое название общее, а люди разные, это разные должности
+  с одинаковым названием («Гендиректор Шар-Құрылыс» и «Гендиректор
+  дочерних» обе печатаются как «Генеральный директор»).
 
-Модель:
-- люди — ФИО и должность по умолчанию, связываются со справочником
-  Структуры из Doc-V по фамилии с инициалами, и тогда ФИО обновляется
-  само;
-- наборы — упорядоченные списки согласующих под таблицей;
-- привязки — какой набор и какие двое руководителей идут у компании
-  (при необходимости у отдельного объекта компании).
-
-Должность и компания хранятся в привязке, а не у человека: один и тот
-же человек — генеральный директор двух десятков компаний, и в Структуре
-Doc-V у него одна должность, а печатать надо ту, под которой он
-подписывает этот реестр.
+Наборы согласующих и правила компаний ссылаются только на должности.
+Своё у них одно — компания в подписи. Смена подписанта делается в одном
+месте: у должности меняется человек.
 """
 import json
 import logging
@@ -32,8 +27,7 @@ from .jobsqueue.db import connect
 
 log = logging.getLogger(__name__)
 
-ROLE_SOGLASOVANO = "soglasovano"
-ROLE_UTVERZHDAYU = "utverzhdayu"
+TOP_ROLES = ("soglasovano", "utverzhdayu")
 AGREED_MARK_ID = 3  # перед этим подписантом печаталась строка «СОГЛАСОВАНО»
 
 # Doc-V выводит название организации по-разному: то с кавычками-ёлочками,
@@ -63,12 +57,19 @@ def normalize_object(value) -> str:
 def fio_key(value) -> str:
     """Фамилия и инициалы: «Аманов Б.Ш.» и «Аманов Бауыржан Шарипович»
     должны сойтись — в шаблоне писали инициалами, Doc-V шлёт полностью."""
-    text = re.sub(r"[.,]", " ", unicodedata.normalize("NFC", str(value or "")))
+    text = re.sub(r"[.,]", " ", print_name(value))
     parts = [p for p in re.split(r"\s+", text.translate(_KZ_FOLD)) if p]
     if not parts:
         return ""
     initials = "".join(p[0] for p in parts[1:3])
     return f"{parts[0]} {initials}".strip().casefold()
+
+
+def print_name(value) -> str:
+    """ФИО как печатать: Структура шлёт «Фамилия И.О. (Должность)», а
+    в подпись должность идёт отдельной строкой — хвост в скобках долой."""
+    text = unicodedata.normalize("NFC", str(value or "")).strip()
+    return re.sub(r"\s*\([^()]*\)\s*$", "", text).strip()
 
 
 def _person(fio: str, position: str, company: str, mark: str = "") -> dict:
@@ -78,160 +79,11 @@ def _person(fio: str, position: str, company: str, mark: str = "") -> dict:
     return out
 
 
-SLOT_SEP = "||"
-
-
-GW_PREFIX = "gw:"   # должность шлюза; uid и должности Структуры так не начинаются
-
-
-def gw_slot(name: str) -> str:
-    """Выбор «должность шлюза»: подпись идёт от того, кого на неё
-    назначили, и меняется в одном месте для всех компаний сразу."""
-    return slot_value(f"{GW_PREFIX}{name}")
-
-
-def slot_value(ref: str = "", dept: str = "", person_id=None) -> str:
-    """Одно поле формы на выбор подписанта: должность шлюза, должность
-    или сотрудник из Структуры, либо человек из справочника. Ссылка
-    сильнее — с неё и начинаем."""
-    if ref:
-        return f"r:{ref}{SLOT_SEP}{dept or ''}"
-    if person_id:
-        return f"p:{person_id}"
-    return ""
-
-
-def parse_slot(value: str) -> dict:
-    value = str(value or "").strip()
-    if value.startswith("r:"):
-        ref, _, dept = value[2:].partition(SLOT_SEP)
-        return {"ref": ref, "dept": dept, "person_id": None}
-    if value.startswith("p:") and value[2:].isdigit():
-        return {"ref": "", "dept": "", "person_id": int(value[2:])}
-    return {"ref": "", "dept": "", "person_id": None}
-
-
 class SignerStore:
     def __init__(self, db_path: Path):
         self.db_path = db_path
 
-    # --- чтение ---------------------------------------------------------
-
-    def people(self) -> list[dict]:
-        with connect(self.db_path) as conn:
-            return [dict(r) for r in conn.execute(
-                "SELECT * FROM signer_people ORDER BY fio").fetchall()]
-
-    def sets(self) -> dict[str, list[dict]]:
-        out: dict[str, list[dict]] = {}
-        with connect(self.db_path) as conn:
-            for r in conn.execute(
-                    "SELECT s.*, p.fio, p.position AS default_position"
-                    " FROM signer_sets s JOIN signer_people p ON p.id = s.person_id"
-                    " ORDER BY s.name, s.ord").fetchall():
-                out.setdefault(r["name"], []).append(dict(r))
-        return out
-
-    def bindings(self) -> list[dict]:
-        with connect(self.db_path) as conn:
-            return [dict(r) for r in conn.execute(
-                "SELECT * FROM signer_bindings ORDER BY company, object_name").fetchall()]
-
-    def stats(self) -> dict[str, int]:
-        with connect(self.db_path) as conn:
-            return {
-                "people": conn.execute("SELECT COUNT(*) c FROM signer_people").fetchone()["c"],
-                "sets": conn.execute(
-                    "SELECT COUNT(DISTINCT name) c FROM signer_sets").fetchone()["c"],
-                "bindings": conn.execute(
-                    "SELECT COUNT(*) c FROM signer_bindings").fetchone()["c"],
-                "linked": conn.execute(
-                    "SELECT COUNT(*) c FROM signer_people WHERE docv_uid <> ''").fetchone()["c"],
-            }
-
-    # --- должности шлюза --------------------------------------------------
-
-    def gateway_positions(self) -> list[str]:
-        """Названия должностей шлюза. В подпись печатается именно оно, а не
-        должность из Структуры: у Doc-V она одна на человека, а подписывать
-        он может как директор разных компаний."""
-        with connect(self.db_path) as conn:
-            return [r["name"] for r in conn.execute(
-                "SELECT name FROM signer_positions ORDER BY name")]
-
-    def position_cards(self) -> list[dict]:
-        """Должности шлюза вместе с назначенным человеком и числом мест,
-        где на должность ссылаются подписи."""
-        staff = {p["uid"]: p for p in self.staff()}
-        with connect(self.db_path) as conn:
-            people = {r["id"]: r["fio"] for r in
-                      conn.execute("SELECT id, fio FROM signer_people")}
-            rows = conn.execute("SELECT * FROM signer_positions ORDER BY name").fetchall()
-            out = []
-            for row in rows:
-                ref = f"{GW_PREFIX}{row['name']}"
-                used = conn.execute(
-                    "SELECT (SELECT COUNT(*) FROM signer_bindings"
-                    "  WHERE soglasovano_ref = ? OR utverzhdayu_ref = ?)"
-                    " + (SELECT COUNT(*) FROM signer_sets WHERE position_ref = ?) AS n",
-                    (ref, ref, ref)).fetchone()["n"]
-                holder = staff.get(row["holder_uid"])
-                out.append({
-                    "name": row["name"],
-                    "value": slot_value(ref),
-                    "holder_uid": row["holder_uid"],
-                    "holder_person_id": row["holder_person_id"],
-                    "holder": (holder["fio"] if holder
-                               else people.get(row["holder_person_id"], "")),
-                    "holder_slot": slot_value(row["holder_uid"], "",
-                                              row["holder_person_id"]),
-                    "vacant": not holder and not people.get(row["holder_person_id"]),
-                    "used": used,
-                })
-        return out
-
-    def assign_position(self, name: str, *, holder_uid: str = "",
-                        holder_person_id=None) -> None:
-        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        with connect(self.db_path) as conn:
-            conn.execute(
-                "INSERT INTO signer_positions (name, holder_uid, holder_person_id,"
-                " updated_at) VALUES (?,?,?,?) ON CONFLICT(name) DO UPDATE SET"
-                " holder_uid = excluded.holder_uid,"
-                " holder_person_id = excluded.holder_person_id,"
-                " updated_at = excluded.updated_at",
-                (name.strip(), holder_uid.strip(), holder_person_id or None, now))
-
-    def position_usage(self, name: str) -> int:
-        ref = f"{GW_PREFIX}{name}"
-        with connect(self.db_path) as conn:
-            return conn.execute(
-                "SELECT (SELECT COUNT(*) FROM signer_bindings"
-                "  WHERE soglasovano_ref = ? OR utverzhdayu_ref = ?)"
-                " + (SELECT COUNT(*) FROM signer_sets WHERE position_ref = ?) AS n",
-                (ref, ref, ref)).fetchone()["n"]
-
-    def add_position(self, name: str) -> str:
-        name = str(name or "").strip()
-        if not name:
-            return ""
-        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        with connect(self.db_path) as conn:
-            conn.execute("INSERT OR IGNORE INTO signer_positions (name, updated_at)"
-                         " VALUES (?,?)", (name, now))
-        return name
-
-    def delete_position(self, name: str) -> None:
-        with connect(self.db_path) as conn:
-            conn.execute("DELETE FROM signer_positions WHERE name = ?", (name,))
-
-    def _remember_positions(self, *names) -> None:
-        """Должность, набранную руками, каталог подхватывает сам — иначе
-        в ста тринадцати привязках развелись бы опечатки."""
-        for name in names:
-            self.add_position(name)
-
-    # --- Структура Doc-V: кто сейчас занимает должность -------------------
+    # --- Структура Doc-V ------------------------------------------------
 
     def staff(self) -> list[dict]:
         """Сотрудники из выгрузки Doc-V. Записи без имени пропускаются:
@@ -241,112 +93,268 @@ class SignerStore:
             rows = conn.execute("SELECT name, uid, data FROM directories").fetchall()
         for row in rows:
             data = json.loads(row["data"])
-            fio = str(data.get("name") or data.get("display_name") or "").strip()
-            if not fio:
+            raw = str(data.get("name") or data.get("display_name") or "").strip()
+            if not raw:
                 continue
-            out.append({"uid": row["uid"], "fio": fio,
+            out.append({"uid": row["uid"], "fio": print_name(raw), "raw_name": raw,
                         "position": str(data.get("position") or "").strip(),
-                        "department": str(data.get("department") or "").strip(),
-                        "department_uid": str(data.get("department_uid") or "").strip(),
-                        "directory": row["name"]})
+                        "department": str(data.get("department") or "").strip()})
         return sorted(out, key=lambda p: p["fio"])
 
-    def positions(self) -> list[dict]:
-        """Должности из Структуры для выпадающих списков: сама должность,
-        отдел и кто её сейчас занимает."""
-        grouped: dict[tuple[str, str], list[str]] = {}
-        for person in self.staff():
-            if not person["position"]:
-                continue
-            grouped.setdefault((person["position"], person["department"]), []).append(
-                person["fio"])
-        return [{"position": position, "department": department,
-                 "holders": sorted(x for x in holders if x)}
-                for (position, department), holders in sorted(grouped.items())]
+    # --- должности шлюза --------------------------------------------------
 
-    def _holder(self, staff: list[dict], ref: str, dept: str,
-                ctx: dict | None = None) -> dict | None:
-        """Кого подставить по ссылке. Ссылкой может быть uid сотрудника —
-        тогда подпись всегда от него, а ФИО обновляется вслед за Doc-V —
-        либо название должности: тогда подставляется тот, кто занимает её
-        сейчас, и подпись переезжает вместе с назначением."""
-        ref = str(ref or "").strip()
-        if not ref:
-            return None
-        dept = str(dept or "").strip()
-        if ref.startswith(GW_PREFIX):
-            return self._gw_holder(staff, ref[len(GW_PREFIX):], ctx)
-        by_uid = [p for p in staff if p["uid"] == ref]
-        if by_uid:
-            return by_uid[0]
-        found = [p for p in staff if p["position"] == ref
-                 and (not dept or p["department"] == dept)]
-        if not found:
-            log.warning("в Структуре никого нет по этой ссылке — подпись останется пустой",
-                        extra={"data": {"ref": ref, "department": dept}})
-            return None
-        if len(found) > 1:
-            log.warning("должность занимают несколько человек — беру первого по алфавиту",
-                        extra={"data": {"position_ref": ref, "department": dept,
-                                        "holders": [p["fio"] for p in found]}})
-        return sorted(found, key=lambda p: p["fio"])[0]
-
-    def _gw_holder(self, staff: list[dict], name: str,
-                   ctx: dict | None = None) -> dict | None:
-        """Кого назначили на должность шлюза. Должность и есть то, что
-        печатается, поэтому она же идёт в position."""
-        cached = (ctx or {}).get("gw")
-        if cached is not None:
-            row = cached.get(name)
-            if row is None:
-                log.warning("должности шлюза нет в каталоге — подпись останется пустой",
-                            extra={"data": {"position": name}})
-                return None
-            fio = ""
-            if row["holder_uid"]:
-                found = [p for p in staff if p["uid"] == row["holder_uid"]]
-                fio = found[0]["fio"] if found else ""
-            if not fio and row["holder_person_id"]:
-                fio = (ctx or {}).get("people", {}).get(row["holder_person_id"], "")
-            if not fio:
-                log.warning("на должность шлюза никто не назначен —"
-                            " подпись останется пустой",
-                            extra={"data": {"position": name}})
-                return None
-            return {"uid": row["holder_uid"], "fio": fio, "position": name,
-                    "department": ""}
+    def roles(self, ctx: dict | None = None) -> list[dict]:
+        """Все должности с тем, кто их занимает, и числом подписей,
+        которые на них держатся."""
+        ctx = ctx or self.context()
         with connect(self.db_path) as conn:
-            row = conn.execute("SELECT * FROM signer_positions WHERE name = ?",
-                               (name,)).fetchone()
-            if row is None:
-                log.warning("должности шлюза нет в каталоге — подпись останется пустой",
-                            extra={"data": {"position": name}})
-                return None
-            fio = ""
-            if row["holder_uid"]:
-                found = [p for p in staff if p["uid"] == row["holder_uid"]]
-                fio = found[0]["fio"] if found else ""
-            if not fio and row["holder_person_id"]:
-                person = conn.execute("SELECT fio FROM signer_people WHERE id = ?",
-                                      (row["holder_person_id"],)).fetchone()
-                fio = person["fio"] if person else ""
-        if not fio:
-            log.warning("на должность шлюза никто не назначен — подпись останется пустой",
-                        extra={"data": {"position": name}})
-            return None
-        return {"uid": row["holder_uid"], "fio": fio, "position": name, "department": ""}
+            rows = conn.execute("SELECT * FROM signer_roles ORDER BY name").fetchall()
+            usage = self._usage(conn)
+        out = []
+        for row in rows:
+            fio = self._holder_fio(row, ctx)
+            out.append({"name": row["name"], "title": row["title"] or row["name"],
+                        "holder_uid": row["holder_uid"], "holder_name": row["holder_name"],
+                        "holder": fio, "vacant": not fio,
+                        "in_structura": bool(row["holder_uid"]
+                                             and row["holder_uid"] in ctx["staff"]),
+                        "used": usage.get(row["name"], 0)})
+        return out
+
+    def _usage(self, conn) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for column in ("soglasovano_role", "utverzhdayu_role"):
+            for r in conn.execute(f"SELECT {column} AS role, COUNT(*) n FROM signer_rules"
+                                  f" WHERE {column} <> '' GROUP BY {column}"):
+                counts[r["role"]] = counts.get(r["role"], 0) + r["n"]
+        for r in conn.execute("SELECT role, COUNT(*) n FROM signer_set_lines GROUP BY role"):
+            counts[r["role"]] = counts.get(r["role"], 0) + r["n"]
+        return counts
+
+    def role_usage(self, name: str) -> int:
+        with connect(self.db_path) as conn:
+            return self._usage(conn).get(name, 0)
+
+    def save_role(self, name: str, *, title: str = "", holder_uid: str = "",
+                  holder_name: str = "") -> str:
+        name = str(name or "").strip()
+        if not name:
+            raise ValueError("у должности должно быть имя")
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        with connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT INTO signer_roles (name, title, holder_uid, holder_name, updated_at)"
+                " VALUES (?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET"
+                " title = excluded.title, holder_uid = excluded.holder_uid,"
+                " holder_name = excluded.holder_name, updated_at = excluded.updated_at",
+                (name, str(title or "").strip(), str(holder_uid or "").strip(),
+                 print_name(holder_name), now))
+        return name
+
+    def rename_role(self, old: str, new: str) -> None:
+        """Переименование тянет за собой все ссылки: ключ — это и есть
+        связь, других идентификаторов у должности нет."""
+        new = str(new or "").strip()
+        if not new or new == old:
+            return
+        with connect(self.db_path) as conn:
+            if conn.execute("SELECT 1 FROM signer_roles WHERE name = ?", (new,)).fetchone():
+                raise ValueError(f"должность «{new}» уже есть")
+            conn.execute("UPDATE signer_roles SET name = ? WHERE name = ?", (new, old))
+            conn.execute("UPDATE signer_set_lines SET role = ? WHERE role = ?", (new, old))
+            for column in ("soglasovano_role", "utverzhdayu_role"):
+                conn.execute(f"UPDATE signer_rules SET {column} = ? WHERE {column} = ?",
+                             (new, old))
+
+    def delete_role(self, name: str) -> None:
+        if self.role_usage(name):
+            raise ValueError(f"на должность «{name}» ссылаются подписи")
+        with connect(self.db_path) as conn:
+            conn.execute("DELETE FROM signer_roles WHERE name = ?", (name,))
+
+    def link_by_name(self) -> dict:
+        """Разовая помощь после переноса: должности, у которых человек
+        вписан только именем, получают uid из Структуры по фамилии с
+        инициалами. Дальше имя из Структуры главнее вписанного."""
+        by_key: dict[str, str] = {}
+        for person in self.staff():
+            key = fio_key(person["fio"])
+            if key and key not in by_key:
+                by_key[key] = person["uid"]
+        if not by_key:
+            return {"staff": 0, "linked": 0, "left": 0}
+        linked, left = 0, []
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        with connect(self.db_path) as conn:
+            for row in conn.execute(
+                    "SELECT name, holder_name FROM signer_roles"
+                    " WHERE holder_uid = '' AND holder_name <> ''").fetchall():
+                uid = by_key.get(fio_key(row["holder_name"]))
+                if uid:
+                    conn.execute("UPDATE signer_roles SET holder_uid = ?, updated_at = ?"
+                                 " WHERE name = ?", (uid, now, row["name"]))
+                    linked += 1
+                else:
+                    left.append(row["holder_name"])
+        result = {"staff": len(by_key), "linked": linked, "left": len(left)}
+        log.info("должности сопоставлены со Структурой",
+                 extra={"data": {**result, "no_match": left[:10]}})
+        return result
+
+    # --- наборы ---------------------------------------------------------
+
+    def sets(self, ctx: dict | None = None) -> dict[str, list[dict]]:
+        ctx = ctx or self.context()
+        out: dict[str, list[dict]] = {}
+        with connect(self.db_path) as conn:
+            names = [r["set_name"] for r in conn.execute(
+                "SELECT DISTINCT set_name FROM signer_set_lines"
+                " UNION SELECT DISTINCT set_name FROM signer_rules ORDER BY set_name")]
+            for name in names:
+                out[name] = []
+            for r in conn.execute("SELECT * FROM signer_set_lines"
+                                  " ORDER BY set_name, ord").fetchall():
+                role = ctx["roles"].get(r["role"])
+                out.setdefault(r["set_name"], []).append({
+                    **dict(r), "title": (role["title"] or role["name"]) if role else "",
+                    "holder": self._holder_fio(role, ctx) if role else "",
+                    "missing": role is None})
+        return out
+
+    def save_set(self, name: str, lines: list[dict]) -> int:
+        """lines: [{"role", "company", "mark", "skip_expense_types"}] —
+        порядок списка и есть порядок подписей."""
+        name = str(name or "").strip()
+        if not name:
+            raise ValueError("имя набора обязательно")
+        rows = [(name, i, e["role"].strip(), (e.get("company") or "").strip(),
+                 (e.get("mark") or "").strip(), (e.get("skip_expense_types") or "").strip())
+                for i, e in enumerate(e for e in lines if str(e.get("role") or "").strip())]
+        with connect(self.db_path) as conn:
+            conn.execute("DELETE FROM signer_set_lines WHERE set_name = ?", (name,))
+            conn.executemany(
+                "INSERT INTO signer_set_lines (set_name, ord, role, print_company, mark,"
+                " skip_expense_types) VALUES (?,?,?,?,?,?)", rows)
+        return len(rows)
+
+    def delete_set(self, name: str) -> None:
+        with connect(self.db_path) as conn:
+            used = conn.execute("SELECT COUNT(*) c FROM signer_rules WHERE set_name = ?",
+                                (name,)).fetchone()["c"]
+            if used:
+                raise ValueError(f"набор «{name}» используют {used} правил")
+            conn.execute("DELETE FROM signer_set_lines WHERE set_name = ?", (name,))
+
+    # --- правила компаний -------------------------------------------------
+
+    def rules(self) -> list[dict]:
+        with connect(self.db_path) as conn:
+            return [dict(r) for r in conn.execute(
+                "SELECT * FROM signer_rules ORDER BY company, object_name").fetchall()]
+
+    def rule(self, rule_id: int) -> dict | None:
+        with connect(self.db_path) as conn:
+            row = conn.execute("SELECT * FROM signer_rules WHERE id = ?",
+                               (rule_id,)).fetchone()
+            return dict(row) if row else None
+
+    def company_rules(self, company: str) -> list[dict]:
+        with connect(self.db_path) as conn:
+            return [dict(r) for r in conn.execute(
+                "SELECT * FROM signer_rules WHERE company_key = ? ORDER BY object_name",
+                (normalize_name(company),)).fetchall()]
+
+    def save_rule(self, *, company: str, object_name: str, set_name: str,
+                  soglasovano: str = "", soglasovano_company: str = "",
+                  utverzhdayu: str = "", utverzhdayu_company: str = "",
+                  rule_id: int | None = None) -> int:
+        company = str(company or "").strip()
+        if not company:
+            raise ValueError("компания обязательна")
+        object_name = str(object_name or "").strip()
+        values = (company, normalize_name(company), object_name, normalize_object(object_name),
+                  str(set_name or "").strip(), str(soglasovano or "").strip(),
+                  str(soglasovano_company or "").strip(), str(utverzhdayu or "").strip(),
+                  str(utverzhdayu_company or "").strip())
+        with connect(self.db_path) as conn:
+            if rule_id:
+                conn.execute(
+                    "UPDATE signer_rules SET company=?, company_key=?, object_name=?,"
+                    " object_key=?, set_name=?, soglasovano_role=?, soglasovano_company=?,"
+                    " utverzhdayu_role=?, utverzhdayu_company=? WHERE id=?",
+                    (*values, rule_id))
+                return rule_id
+            cur = conn.execute(
+                "INSERT INTO signer_rules (company, company_key, object_name, object_key,"
+                " set_name, soglasovano_role, soglasovano_company, utverzhdayu_role,"
+                " utverzhdayu_company) VALUES (?,?,?,?,?,?,?,?,?)"
+                " ON CONFLICT(company_key, object_key) DO UPDATE SET"
+                " company=excluded.company, object_name=excluded.object_name,"
+                " set_name=excluded.set_name, soglasovano_role=excluded.soglasovano_role,"
+                " soglasovano_company=excluded.soglasovano_company,"
+                " utverzhdayu_role=excluded.utverzhdayu_role,"
+                " utverzhdayu_company=excluded.utverzhdayu_company", values)
+            return cur.lastrowid or 0
+
+    def delete_rule(self, rule_id: int) -> None:
+        with connect(self.db_path) as conn:
+            conn.execute("DELETE FROM signer_rules WHERE id = ?", (rule_id,))
+
+    def apply_to_company(self, company: str, *, soglasovano: dict | None = None,
+                         utverzhdayu: dict | None = None,
+                         set_name: str | None = None) -> int:
+        """Проставить одно и то же во все правила компании. Утверждающий
+        у компании один на все объекты, и правкой по одной строке это
+        занятие на полдня. None — поле не трогаем; {"role": "", …} —
+        очистить."""
+        sets_sql, values = [], []
+        for role, slot in (("soglasovano", soglasovano), ("utverzhdayu", utverzhdayu)):
+            if slot is None:
+                continue
+            sets_sql += [f"{role}_role=?", f"{role}_company=?"]
+            values += [str(slot.get("role") or "").strip(),
+                       str(slot.get("company") or "").strip()]
+        if set_name:
+            sets_sql.append("set_name=?")
+            values.append(set_name.strip())
+        if not sets_sql:
+            return 0
+        with connect(self.db_path) as conn:
+            cur = conn.execute(
+                f"UPDATE signer_rules SET {', '.join(sets_sql)} WHERE company_key = ?",
+                (*values, normalize_name(company)))
+            return cur.rowcount
 
     # --- подбор ---------------------------------------------------------
 
     def context(self) -> dict:
-        """Разово прочитанные Структура и каталог должностей — чтобы
-        сводная таблица на сотню строк не ходила в базу за каждой."""
+        """Разово прочитанные Структура и должности — чтобы сводная
+        таблица на сотню строк не ходила в базу за каждой."""
         with connect(self.db_path) as conn:
-            gw = {r["name"]: dict(r) for r in
-                  conn.execute("SELECT * FROM signer_positions")}
-            people = {r["id"]: r["fio"] for r in
-                      conn.execute("SELECT id, fio FROM signer_people")}
-        return {"staff": self.staff(), "gw": gw, "people": people}
+            roles = {r["name"]: dict(r) for r in conn.execute("SELECT * FROM signer_roles")}
+        return {"staff": {p["uid"]: p for p in self.staff()}, "roles": roles}
+
+    def _holder_fio(self, role: dict | None, ctx: dict) -> str:
+        """Имя из Структуры главнее вписанного руками: вписанное — это
+        запас на случай, если человека в Doc-V нет."""
+        if not role:
+            return ""
+        person = ctx["staff"].get(role["holder_uid"]) if role["holder_uid"] else None
+        return person["fio"] if person else print_name(role["holder_name"])
+
+    def _signature(self, role_name: str, company: str, ctx: dict,
+                   mark: str = "") -> dict | None:
+        role = ctx["roles"].get(role_name)
+        if role is None:
+            log.warning("должности нет в справочнике — подпись останется пустой",
+                        extra={"data": {"role": role_name}})
+            return None
+        fio = self._holder_fio(role, ctx)
+        if not fio:
+            log.warning("на должность никто не назначен — подпись останется пустой",
+                        extra={"data": {"role": role_name}})
+            return None
+        return _person(fio, role["title"] or role["name"], company, mark)
 
     def resolve(self, company: str, object_name: str = "",
                 expense_type: str = "", ctx: dict | None = None) -> dict:
@@ -356,293 +364,76 @@ class SignerStore:
         object_key = normalize_object(object_name)
         with connect(self.db_path) as conn:
             row = conn.execute(
-                "SELECT * FROM signer_bindings WHERE company_key = ? AND object_key = ?",
+                "SELECT * FROM signer_rules WHERE company_key = ? AND object_key = ?",
                 (company_key, object_key)).fetchone()
             source = "объект"
             if row is None:
                 row = conn.execute(
-                    "SELECT * FROM signer_bindings WHERE company_key = ? AND object_key = ''",
+                    "SELECT * FROM signer_rules WHERE company_key = ? AND object_key = ''",
                     (company_key,)).fetchone()
                 source = "компания"
             if row is None:
-                log.warning("нет подписантов: реестр выйдет без подписей",
+                log.warning("нет правила подписей: реестр выйдет без подписей",
                             extra={"data": {"company": company, "object": object_name}})
                 return {"soglasovano": None, "utverzhdayu": None,
-                        "coordinators": [], "source": "нет привязки"}
-            whole = None
+                        "coordinators": [], "source": "нет правила"}
+            whole = row
             if source == "объект":
                 whole = conn.execute(
-                    "SELECT * FROM signer_bindings WHERE company_key = ?"
-                    " AND object_key = ''", (company_key,)).fetchone()
-            names = self._names(conn)
-            entries = conn.execute(
-                "SELECT * FROM signer_sets WHERE name = ? ORDER BY ord",
+                    "SELECT * FROM signer_rules WHERE company_key = ? AND object_key = ''",
+                    (company_key,)).fetchone() or row
+            lines = conn.execute(
+                "SELECT * FROM signer_set_lines WHERE set_name = ? ORDER BY ord",
                 (row["set_name"],)).fetchall()
-        ctx = ctx or {}
-        staff = ctx.get("staff")
-        if staff is None:
-            staff = self.staff()
-
-        def fio_of(person_id, ref, dept) -> tuple[str, str]:
-            """-> (ФИО, должность по умолчанию). Ссылка на должность
-            сильнее записанного человека: она и нужна, чтобы подпись
-            менялась вместе с составом Doc-V."""
-            holder = self._holder(staff, ref, dept, ctx)
-            if holder:
-                return holder["fio"], holder["position"]
-            return names.get(person_id, ("", ""))
+        ctx = ctx or self.context()
 
         expense = str(expense_type or "").strip().casefold()
         coordinators = []
-        for entry in entries:
-            skip = [t.strip().casefold() for t in (entry["skip_expense_types"] or "").split(",")]
-            if expense and expense in [t for t in skip if t]:
+        for line in lines:
+            skip = {t.strip().casefold() for t in (line["skip_expense_types"] or "").split(",")
+                    if t.strip()}
+            if expense and expense in skip:
                 continue
-            fio, default_position = fio_of(entry["person_id"], entry["position_ref"],
-                                           entry["dept_ref"])
-            if not fio:
-                continue
-            coordinators.append(_person(fio, entry["position"] or default_position,
-                                        entry["print_company"], entry["mark"]))
+            person = self._signature(line["role"], line["print_company"], ctx, line["mark"])
+            if person:
+                coordinators.append(person)
 
         def top(role: str) -> dict | None:
-            source = row
-            if not row[f"{role}_id"] and not row[f"{role}_ref"] and whole is not None:
-                source = whole   # у объекта не задано — берём правило компании
-            person_id = source[f"{role}_id"]
-            ref = source[f"{role}_ref"]
-            if not person_id and not ref:
+            # у объекта не задано — берём правило компании
+            source_row = row if row[f"{role}_role"] else whole
+            if not source_row[f"{role}_role"]:
                 return None
-            fio, default_position = fio_of(person_id, ref, source[f"{role}_dept"])
-            if not fio:
-                return None
-            return _person(fio, source[f"{role}_position"] or default_position,
-                           source[f"{role}_company"] or row["company"])
+            return self._signature(source_row[f"{role}_role"],
+                                   source_row[f"{role}_company"] or row["company"], ctx)
 
-        return {"soglasovano": top(ROLE_SOGLASOVANO),
-                "utverzhdayu": top(ROLE_UTVERZHDAYU),
+        return {"soglasovano": top("soglasovano"), "utverzhdayu": top("utverzhdayu"),
                 "coordinators": coordinators, "source": source}
 
-    def _names(self, conn) -> dict[int, tuple[str, str]]:
-        return {r["id"]: (r["fio"], r["position"])
-                for r in conn.execute("SELECT id, fio, position FROM signer_people")}
-
-    # --- связь со Структурой Doc-V ---------------------------------------
-
-    def link_directory(self, directories: dict[str, dict[str, dict]] | None = None) -> dict:
-        """Сверяет людей справочника с выгрузкой Структуры по фамилии с
-        инициалами: запоминает uid и подтягивает написание ФИО. Связь
-        нужна и сама по себе — по ней видно, кого Doc-V уже не знает."""
-        by_key: dict[str, tuple[str, str]] = {}
-        for person in self.staff():
-            key = fio_key(person["fio"])
-            if key and key not in by_key:
-                by_key[key] = (person["uid"], person["fio"])
-        if not by_key:
-            return {"staff": 0, "matched": 0, "renamed": 0, "unmatched": 0}
-        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        matched = renamed = 0
-        unmatched = []
+    def stats(self) -> dict[str, int]:
         with connect(self.db_path) as conn:
-            for row in conn.execute(
-                    "SELECT id, fio, fio_key, docv_uid FROM signer_people").fetchall():
-                found = by_key.get(row["fio_key"])
-                if not found:
-                    unmatched.append(row["fio"])
-                    continue
-                matched += 1
-                if found[0] == row["docv_uid"] and found[1] == row["fio"]:
-                    continue
-                if found[1] != row["fio"]:
-                    renamed += 1
-                conn.execute(
-                    "UPDATE signer_people SET docv_uid = ?, fio = ?, updated_at = ?"
-                    " WHERE id = ?", (found[0], found[1], now, row["id"]))
-        result = {"staff": len(by_key), "matched": matched, "renamed": renamed,
-                  "unmatched": len(unmatched)}
-        log.info("подписанты сверены со Структурой",
-                 extra={"data": {**result, "no_match": unmatched[:10]}})
-        return result
-
-    # --- правка из /ui ----------------------------------------------------
-
-    def save_person(self, person_id: int | None, fio: str, position: str) -> int:
-        fio = fio.strip()
-        if not fio:
-            raise ValueError("ФИО обязательно")
-        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        with connect(self.db_path) as conn:
-            if person_id:
-                conn.execute(
-                    "UPDATE signer_people SET fio = ?, fio_key = ?, position = ?,"
-                    " updated_at = ? WHERE id = ?",
-                    (fio, fio_key(fio), position.strip(), now, person_id))
-                return person_id
-            cur = conn.execute(
-                "INSERT INTO signer_people (fio, fio_key, position, docv_uid, updated_at)"
-                " VALUES (?,?,?,'',?) ON CONFLICT(fio_key) DO UPDATE SET fio = excluded.fio,"
-                " position = excluded.position, updated_at = excluded.updated_at",
-                (fio, fio_key(fio), position.strip(), now))
-            if cur.lastrowid:
-                return cur.lastrowid
-            return conn.execute("SELECT id FROM signer_people WHERE fio_key = ?",
-                                (fio_key(fio),)).fetchone()["id"]
-
-    def people_usage(self) -> dict[int, int]:
-        """Сколько подписей держится на каждом человеке — чтобы в списке
-        было сразу видно, кого удалять нельзя."""
-        counts: dict[int, int] = {}
-        with connect(self.db_path) as conn:
-            for column in ("soglasovano_id", "utverzhdayu_id"):
-                for row in conn.execute(
-                        f"SELECT {column} AS id, COUNT(*) AS n FROM signer_bindings"
-                        f" WHERE {column} IS NOT NULL GROUP BY {column}"):
-                    counts[row["id"]] = counts.get(row["id"], 0) + row["n"]
-            for row in conn.execute(
-                    "SELECT person_id AS id, COUNT(*) AS n FROM signer_sets"
-                    " WHERE person_id IS NOT NULL GROUP BY person_id"):
-                counts[row["id"]] = counts.get(row["id"], 0) + row["n"]
-        return counts
-
-    def person_usage(self, person_id: int) -> list[str]:
-        """Где человек подписывает: удалять его вслепую нельзя, иначе
-        реестр молча выйдет без подписи."""
-        with connect(self.db_path) as conn:
-            used = [f"{r['company']} · {r['object_name'] or 'вся компания'}"
-                    for r in conn.execute(
-                        "SELECT company, object_name FROM signer_bindings"
-                        " WHERE soglasovano_id = ? OR utverzhdayu_id = ?",
-                        (person_id, person_id)).fetchall()]
-            used += [f"набор {r['name']}" for r in conn.execute(
-                "SELECT DISTINCT name FROM signer_sets WHERE person_id = ?",
-                (person_id,)).fetchall()]
-        return used
-
-    def delete_person(self, person_id: int) -> None:
-        with connect(self.db_path) as conn:
-            conn.execute("DELETE FROM signer_people WHERE id = ?", (person_id,))
-
-    def save_binding(self, *, company: str, object_name: str, set_name: str,
-                     soglasovano: dict | None, utverzhdayu: dict | None,
-                     binding_id: int | None = None) -> int:
-        """soglasovano/utverzhdayu: {"person_id", "position", "company",
-        "ref", "dept"} — ref указывает должность в Структуре Doc-V, и тогда
-        подпись идёт от того, кто её занимает сейчас."""
-        company = company.strip()
-        if not company:
-            raise ValueError("компания обязательна")
-        object_name = object_name.strip()
-        left = soglasovano or {}
-        right = utverzhdayu or {}
-        values = (company, normalize_name(company), object_name, normalize_object(object_name),
-                  set_name.strip(),
-                  left.get("person_id") or None, (left.get("position") or "").strip(),
-                  (left.get("company") or "").strip(), (left.get("ref") or "").strip(),
-                  (left.get("dept") or "").strip(),
-                  right.get("person_id") or None, (right.get("position") or "").strip(),
-                  (right.get("company") or "").strip(), (right.get("ref") or "").strip(),
-                  (right.get("dept") or "").strip())
-        self._remember_positions(left.get("position"), right.get("position"))
-        with connect(self.db_path) as conn:
-            if binding_id:
-                conn.execute(
-                    "UPDATE signer_bindings SET company=?, company_key=?, object_name=?,"
-                    " object_key=?, set_name=?, soglasovano_id=?, soglasovano_position=?,"
-                    " soglasovano_company=?, soglasovano_ref=?, soglasovano_dept=?,"
-                    " utverzhdayu_id=?, utverzhdayu_position=?, utverzhdayu_company=?,"
-                    " utverzhdayu_ref=?, utverzhdayu_dept=? WHERE id=?",
-                    (*values, binding_id))
-                return binding_id
-            cur = conn.execute(
-                "INSERT INTO signer_bindings (company, company_key, object_name, object_key,"
-                " set_name, soglasovano_id, soglasovano_position, soglasovano_company,"
-                " soglasovano_ref, soglasovano_dept, utverzhdayu_id, utverzhdayu_position,"
-                " utverzhdayu_company, utverzhdayu_ref, utverzhdayu_dept)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
-                " ON CONFLICT(company_key, object_key) DO UPDATE SET"
-                " company=excluded.company, object_name=excluded.object_name,"
-                " set_name=excluded.set_name, soglasovano_id=excluded.soglasovano_id,"
-                " soglasovano_position=excluded.soglasovano_position,"
-                " soglasovano_company=excluded.soglasovano_company,"
-                " soglasovano_ref=excluded.soglasovano_ref,"
-                " soglasovano_dept=excluded.soglasovano_dept,"
-                " utverzhdayu_id=excluded.utverzhdayu_id,"
-                " utverzhdayu_position=excluded.utverzhdayu_position,"
-                " utverzhdayu_company=excluded.utverzhdayu_company,"
-                " utverzhdayu_ref=excluded.utverzhdayu_ref,"
-                " utverzhdayu_dept=excluded.utverzhdayu_dept", values)
-            return cur.lastrowid or 0
-
-    def apply_to_company(self, company: str, *, soglasovano: dict | None = None,
-                         utverzhdayu: dict | None = None,
-                         set_name: str | None = None) -> int:
-        """Проставить одно и то же во все привязки компании. Утверждающий
-        у компании один на все объекты, и правкой по одной строке это
-        занятие на полдня. None — поле не трогаем."""
-        company_key = normalize_name(company)
-        sets_sql, values = [], []
-        for role, slot in (("soglasovano", soglasovano), ("utverzhdayu", utverzhdayu)):
-            if slot is None:
-                continue
-            sets_sql += [f"{role}_id=?", f"{role}_ref=?", f"{role}_dept=?",
-                         f"{role}_position=?", f"{role}_company=?"]
-            values += [slot.get("person_id") or None, (slot.get("ref") or "").strip(),
-                       (slot.get("dept") or "").strip(),
-                       (slot.get("position") or "").strip(),
-                       (slot.get("company") or "").strip()]
-            self._remember_positions(slot.get("position"))
-        if set_name:
-            sets_sql.append("set_name=?")
-            values.append(set_name.strip())
-        if not sets_sql:
-            return 0
-        with connect(self.db_path) as conn:
-            cur = conn.execute(
-                f"UPDATE signer_bindings SET {', '.join(sets_sql)} WHERE company_key = ?",
-                (*values, company_key))
-            return cur.rowcount
-
-    def company_bindings(self, company: str) -> list[dict]:
-        with connect(self.db_path) as conn:
-            return [dict(r) for r in conn.execute(
-                "SELECT * FROM signer_bindings WHERE company_key = ?"
-                " ORDER BY object_name", (normalize_name(company),)).fetchall()]
-
-    def delete_binding(self, binding_id: int) -> None:
-        with connect(self.db_path) as conn:
-            conn.execute("DELETE FROM signer_bindings WHERE id = ?", (binding_id,))
-
-    def save_set(self, name: str, entries: list[dict]) -> int:
-        """entries: [{"person_id"|"ref", "dept", "position", "company", "mark",
-        "skip_expense_types"}] — порядок списка и есть порядок подписей."""
-        name = name.strip()
-        if not name:
-            raise ValueError("имя набора обязательно")
-        self._remember_positions(*[e.get("position") for e in entries])
-        with connect(self.db_path) as conn:
-            conn.execute("DELETE FROM signer_sets WHERE name = ?", (name,))
-            conn.executemany(
-                "INSERT INTO signer_sets (name, ord, person_id, position, position_ref,"
-                " dept_ref, print_company, mark, skip_expense_types)"
-                " VALUES (?,?,?,?,?,?,?,?,?)",
-                [(name, i, e.get("person_id") or None, (e.get("position") or "").strip(),
-                  (e.get("ref") or "").strip(), (e.get("dept") or "").strip(),
-                  (e.get("company") or "").strip(), (e.get("mark") or "").strip(),
-                  (e.get("skip_expense_types") or "").strip())
-                 for i, e in enumerate(entries) if e.get("person_id") or e.get("ref")])
-        return len(entries)
+            return {
+                "roles": conn.execute("SELECT COUNT(*) c FROM signer_roles").fetchone()["c"],
+                "sets": conn.execute(
+                    "SELECT COUNT(DISTINCT set_name) c FROM signer_set_lines").fetchone()["c"],
+                "rules": conn.execute("SELECT COUNT(*) c FROM signer_rules").fetchone()["c"],
+                "vacant": sum(1 for r in self.roles() if r["vacant"]),
+            }
 
     # --- первичное наполнение --------------------------------------------
 
     def is_empty(self) -> bool:
         with connect(self.db_path) as conn:
-            return conn.execute(
-                "SELECT COUNT(*) c FROM signer_bindings").fetchone()["c"] == 0
+            return conn.execute("SELECT COUNT(*) c FROM signer_rules").fetchone()["c"] == 0
 
     def seed(self, matrix_path: Path, template_path: Path) -> int:
         """Разовый перенос состава из старых источников: структура — из
         data/signers_seed.yaml, ФИО и должности — с листа СПР_ПОДПИСАНТОВ
-        шаблона. Дальше состав правится в /ui, а эти файлы не нужны."""
+        шаблона. Дальше состав правится в /ui, а эти файлы не нужны.
+
+        Должность получает ключ по названию, если в старом справочнике
+        её занимал один человек, иначе — с фамилией в скобках: одиннадцать
+        генеральных директоров становятся одиннадцатью должностями с
+        одним печатаемым названием."""
         import openpyxl
         import yaml
 
@@ -657,80 +448,169 @@ class SignerStore:
                 spr[number] = (str(fio).strip(), str(position or "").strip(),
                                str(company or "").strip())
 
+        holders: dict[str, set[str]] = {}
+        for fio, position, _company in spr.values():
+            holders.setdefault(position, set()).add(fio)
+
+        def role_key(number: int) -> str:
+            fio, position, _company = spr[number]
+            return position if len(holders[position]) == 1 else f"{position} ({fio})"
+
         excl = raw.get("expense_type_exclusions", {})
         skip_types = ",".join(excl.get("expense_types", []))
         skip_ids = set(excl.get("remove_ids", []))
-
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
         with connect(self.db_path) as conn:
-            ids: dict[int, int] = {}
             for number, (fio, position, _company) in spr.items():
-                key = fio_key(fio)
-                found = conn.execute("SELECT id FROM signer_people WHERE fio_key = ?",
-                                     (key,)).fetchone()
-                if found:
-                    ids[number] = found["id"]
-                    continue
-                cur = conn.execute(
-                    "INSERT INTO signer_people (fio, fio_key, position, docv_uid, updated_at)"
-                    " VALUES (?,?,?,'',?)", (fio, key, position, now))
-                ids[number] = cur.lastrowid
+                conn.execute(
+                    "INSERT OR IGNORE INTO signer_roles (name, title, holder_uid,"
+                    " holder_name, updated_at) VALUES (?,?,?,?,?)",
+                    (role_key(number), position, "", fio, now))
 
             for name, numbers in raw.get("approver_lists", {}).items():
-                rows = []
-                for i, number in enumerate(numbers):
-                    if number not in spr:
-                        continue
-                    _fio, position, company = spr[number]
-                    rows.append((name, i, ids[number], position, "", "", company,
-                                 "СОГЛАСОВАНО" if number == AGREED_MARK_ID else "",
-                                 skip_types if number in skip_ids else ""))
-                conn.execute("DELETE FROM signer_sets WHERE name = ?", (name,))
+                conn.execute("DELETE FROM signer_set_lines WHERE set_name = ?", (name,))
                 conn.executemany(
-                    "INSERT INTO signer_sets (name, ord, person_id, position, position_ref,"
-                    " dept_ref, print_company, mark, skip_expense_types)"
-                    " VALUES (?,?,?,?,?,?,?,?,?)", rows)
+                    "INSERT INTO signer_set_lines (set_name, ord, role, print_company,"
+                    " mark, skip_expense_types) VALUES (?,?,?,?,?,?)",
+                    [(name, i, role_key(n), spr[n][2],
+                      "СОГЛАСОВАНО" if n == AGREED_MARK_ID else "",
+                      skip_types if n in skip_ids else "")
+                     for i, n in enumerate(numbers) if n in spr])
 
-            def director(number: int) -> tuple:
-                if number not in spr:
-                    return (None, "", "")
-                _fio, position, company = spr[number]
-                return (ids[number], position, company)
+            def director(number: int) -> tuple[str, str]:
+                return (role_key(number), spr[number][2]) if number in spr else ("", "")
 
             pairs = [(rule["company"], obj, rule["approvers"], rule["directors"])
                      for rule in raw.get("rules", []) for obj in rule["objects"]]
             pairs += [(fb["company"], "", fb["approvers"], fb["directors"])
                       for fb in raw.get("company_fallbacks", [])]
             for company, obj, set_name, directors in pairs:
-                left = director(directors[0]) if directors else (None, "", "")
-                right = director(directors[1]) if len(directors) > 1 else (None, "", "")
+                left = director(directors[0]) if directors else ("", "")
+                right = director(directors[1]) if len(directors) > 1 else ("", "")
                 conn.execute(
-                    "INSERT OR REPLACE INTO signer_bindings (company, company_key,"
-                    " object_name, object_key, set_name, soglasovano_id,"
-                    " soglasovano_position, soglasovano_company, utverzhdayu_id,"
-                    " utverzhdayu_position, utverzhdayu_company)"
-                    " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT OR REPLACE INTO signer_rules (company, company_key, object_name,"
+                    " object_key, set_name, soglasovano_role, soglasovano_company,"
+                    " utverzhdayu_role, utverzhdayu_company) VALUES (?,?,?,?,?,?,?,?,?)",
                     (company, normalize_name(company), obj, normalize_object(obj),
                      set_name, *left, *right))
-            # Должность, которую в старом справочнике занимал ровно один
-            # человек, сразу получает его: каталог становится рабочим без
-            # ручного назначения. «Генеральный директор» у двух десятков
-            # компаний разный, поэтому остаётся вакантным.
-            holders: dict[str, set[int]] = {}
-            for number, (_fio, position, _company) in spr.items():
-                if position:
-                    holders.setdefault(position, set()).add(ids[number])
-            conn.executemany(
-                "INSERT OR IGNORE INTO signer_positions (name, holder_person_id,"
-                " updated_at) VALUES (?,?,?)",
-                [(position, next(iter(people_ids)) if len(people_ids) == 1 else None, now)
-                 for position, people_ids in holders.items()])
-            count = conn.execute(
-                "SELECT COUNT(*) c FROM signer_bindings").fetchone()["c"]
-            people = conn.execute(
-                "SELECT COUNT(*) c FROM signer_people").fetchone()["c"]
+            count = conn.execute("SELECT COUNT(*) c FROM signer_rules").fetchone()["c"]
+            roles = conn.execute("SELECT COUNT(*) c FROM signer_roles").fetchone()["c"]
         log.info("справочник подписантов наполнен",
-                 extra={"data": {"bindings": count, "people": people,
-                                 "spr_rows": len(spr)}})
+                 extra={"data": {"rules": count, "roles": roles, "spr_rows": len(spr)}})
         return count
 
+    # --- перенос с прежней модели -----------------------------------------
+
+    def migrate_legacy(self) -> int:
+        """Прежняя модель держала людей отдельной таблицей и знала четыре
+        способа указать подписанта. Здесь всё это сводится к должностям:
+        каждая пара «печатаемая должность + человек» становится должностью
+        шлюза, а правила и наборы переписываются на неё. Реестры печатаются
+        так же, как печатались. Старые таблицы после переноса удаляются."""
+        with connect(self.db_path) as conn:
+            tables = {r["name"] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'")}
+            if "signer_bindings" not in tables:
+                return 0
+            if conn.execute("SELECT COUNT(*) c FROM signer_rules").fetchone()["c"]:
+                return 0   # новые таблицы уже наполнены — старые просто лишние
+
+            def rows(table: str) -> list[dict]:
+                if table not in tables:
+                    return []
+                return [dict(r) for r in conn.execute(f"SELECT * FROM {table}")]
+
+            people = {p["id"]: p for p in rows("signer_people")}
+            legacy_positions = {p["name"]: p for p in rows("signer_positions")}
+            staff = {p["uid"]: p for p in self.staff()}
+            by_position = {}
+            for p in staff.values():
+                by_position.setdefault((p["position"], p["department"]), []).append(p)
+            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            made: dict[tuple[str, str], str] = {}
+
+            def make_role(title: str, fio: str, uid: str = "") -> str:
+                """Ключ — должность, а если под ней уже другой человек,
+                должность с фамилией в скобках."""
+                title = title.strip()
+                fio = print_name(fio)
+                key = made.get((title, fio))
+                if key:
+                    return key
+                key = title or fio
+                taken = {k for k in made.values()}
+                if key in taken:
+                    key = f"{title} ({fio})" if fio else f"{title} (2)"
+                    n = 2
+                    while key in taken:
+                        n += 1
+                        key = f"{title} ({fio}, {n})"
+                made[(title, fio)] = key
+                conn.execute(
+                    "INSERT OR IGNORE INTO signer_roles (name, title, holder_uid,"
+                    " holder_name, updated_at) VALUES (?,?,?,?,?)",
+                    (key, title, uid, fio, now))
+                return key
+
+            def slot_to_role(person_id, ref: str, dept: str, position: str) -> str:
+                ref = str(ref or "").strip()
+                if ref.startswith("gw:"):
+                    old = legacy_positions.get(ref[3:])
+                    if old is None:
+                        return make_role(ref[3:], "")
+                    holder = staff.get(old.get("holder_uid") or "")
+                    fio = holder["fio"] if holder else people.get(
+                        old.get("holder_person_id") or 0, {}).get("fio", "")
+                    return make_role(old["name"], fio, old.get("holder_uid") or "")
+                if ref:
+                    holder = staff.get(ref)
+                    if holder is None:   # ссылка на должность Структуры
+                        candidates = by_position.get((ref, dept)) or [
+                            p for p in staff.values() if p["position"] == ref]
+                        holder = sorted(candidates, key=lambda p: p["fio"])[0] \
+                            if candidates else None
+                    if holder is None:
+                        return make_role(position or ref, "")
+                    return make_role(position or holder["position"], holder["fio"],
+                                     holder["uid"])
+                person = people.get(person_id or 0)
+                if person is None:
+                    return ""
+                return make_role(position or person.get("position", ""), person["fio"],
+                                 person.get("docv_uid") or "")
+
+            for line in rows("signer_sets"):
+                role = slot_to_role(line.get("person_id"), line.get("position_ref", ""),
+                                    line.get("dept_ref", ""), line.get("position", ""))
+                if not role:
+                    continue
+                conn.execute(
+                    "INSERT OR REPLACE INTO signer_set_lines (set_name, ord, role,"
+                    " print_company, mark, skip_expense_types) VALUES (?,?,?,?,?,?)",
+                    (line["name"], line["ord"], role, line.get("print_company", ""),
+                     line.get("mark", ""), line.get("skip_expense_types", "")))
+
+            moved = 0
+            for b in rows("signer_bindings"):
+                left = slot_to_role(b.get("soglasovano_id"), b.get("soglasovano_ref", ""),
+                                    b.get("soglasovano_dept", ""),
+                                    b.get("soglasovano_position", ""))
+                right = slot_to_role(b.get("utverzhdayu_id"), b.get("utverzhdayu_ref", ""),
+                                     b.get("utverzhdayu_dept", ""),
+                                     b.get("utverzhdayu_position", ""))
+                conn.execute(
+                    "INSERT OR REPLACE INTO signer_rules (company, company_key, object_name,"
+                    " object_key, set_name, soglasovano_role, soglasovano_company,"
+                    " utverzhdayu_role, utverzhdayu_company) VALUES (?,?,?,?,?,?,?,?,?)",
+                    (b["company"], b["company_key"], b["object_name"], b["object_key"],
+                     b["set_name"], left, b.get("soglasovano_company", ""), right,
+                     b.get("utverzhdayu_company", "")))
+                moved += 1
+
+            for table in ("signer_bindings", "signer_sets", "signer_positions",
+                          "signer_people"):
+                conn.execute(f"DROP TABLE IF EXISTS {table}")
+        log.info("подписанты перенесены на модель должностей",
+                 extra={"data": {"rules": moved, "roles": len(made)}})
+        return moved

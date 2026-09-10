@@ -1,13 +1,15 @@
-"""Справочник подписантов шлюза: подбор, должности по компании, связь
-со Структурой Doc-V."""
+"""Справочник подписантов: люди из Структуры, роли из должностей шлюза."""
 import io
 import json
+import sqlite3
+import tempfile
 from pathlib import Path
 
 import openpyxl
 
 from conftest import docv_headers
-from gateway.signers import fio_key
+from gateway.jobsqueue.db import connect, init_db
+from gateway.signers import SignerStore, fio_key, print_name
 
 MODEL = json.loads((Path(__file__).parent / "data" / "model.json").read_text(encoding="utf-8"))
 
@@ -19,85 +21,237 @@ def _render(client, kind, payload):
     return openpyxl.load_workbook(io.BytesIO(client.get(f"/files/{token}").content))
 
 
+def _structura(client, items):
+    r = client.post("/directory/structura", headers=docv_headers(), json={"items": items})
+    assert r.status_code == 200
+
+
+# --- первичное наполнение -------------------------------------------------
+
 def test_seed_filled_from_old_sources(client):
     stats = client.app.state.signers.stats()
-    assert stats["bindings"] > 50 and stats["people"] > 20 and stats["sets"] >= 5
+    assert stats["rules"] > 100 and stats["sets"] >= 5 and stats["roles"] > 20
+    # одиннадцать гендиректоров — одиннадцать должностей с одним названием
+    roles = client.app.state.signers.roles()
+    gendirs = [r for r in roles if r["title"] == "Генеральный директор"]
+    assert len(gendirs) == 11 and len({r["name"] for r in gendirs}) == 11
+    # должность с одним человеком получает ключ без фамилии
+    assert any(r["name"] == "Главный бухгалтер" for r in roles)
 
 
-def test_one_person_signs_for_many_companies_with_own_position(client):
-    """Один и тот же человек — гендиректор десятков компаний. Должность и
-    компания в подписи берутся из привязки, а не из карточки человека."""
-    store = client.app.state.signers
-    seen = {}
-    for binding in store.bindings():
-        resolved = store.resolve(binding["company"], binding["object_name"])
-        person = resolved["utverzhdayu"]
-        if person:
-            seen.setdefault(person["fio"], set()).add(person["company"])
-    multi = {fio: companies for fio, companies in seen.items() if len(companies) > 1}
-    assert multi, "в справочнике должен быть подписант сразу нескольких компаний"
-    for companies in multi.values():
-        assert all(companies), "у каждой подписи своя компания"
+def test_seed_matches_vlookup_line_for_line(client):
+    """Перенос обязан печатать то же, что печатал VLOOKUP по скрытому
+    листу: сравниваем каждый лист тестового реестра."""
+    import yaml
+    from gateway.signers import normalize_name, normalize_object
 
+    ws = openpyxl.load_workbook("templates/excel/template.xlsx")["СПР_ПОДПИСАНТОВ"]
+    spr = {}
+    for r in range(2, ws.max_row + 1):
+        n = ws[f"B{r}"].value
+        if isinstance(n, int):
+            spr[n] = (str(ws[f"F{r}"].value or "").strip(), str(ws[f"H{r}"].value or "").strip(),
+                      str(ws[f"J{r}"].value or "").strip())
+    raw = yaml.safe_load(Path("data/signers_seed.yaml").read_text(encoding="utf-8"))
+    rules = {}
+    for rule in raw["rules"]:
+        for obj in rule["objects"]:
+            rules[(normalize_name(rule["company"]), normalize_object(obj))] = rule
+    for fb in raw["company_fallbacks"]:
+        rules.setdefault((normalize_name(fb["company"]), ""), fb)
+    excl = raw["expense_type_exclusions"]
+
+    def line(i):
+        fio, comp, pos = spr[i]
+        return (" ".join(x for x in (pos, comp) if x), fio)
+
+    def vlookup(company, obj, zatraty):
+        rule = rules.get((normalize_name(company), normalize_object(obj))) \
+            or rules.get((normalize_name(company), ""))
+        if rule is None:
+            return [None, None], []
+        ids = list(raw["approver_lists"][rule["approvers"]])
+        if str(zatraty or "").strip().casefold() in excl["expense_types"]:
+            ids = [i for i in ids if i not in excl["remove_ids"]]
+        d = rule["directors"]
+        return [line(n) if n and n in spr else None for n in (d[0], d[1])], \
+            [line(i) for i in ids]
+
+    wb = _render(client, "inner", MODEL)
+    groups = {}
+    for item in MODEL["request"]:
+        groups.setdefault((item["organization"], item["object_name"]), []).append(item)
+    underline = "_" * 28 + " "
+    checked = 0
+    for (company, obj), group in groups.items():
+        exp_top, exp_lines = vlookup(company, obj, group[0].get("zatraty"))
+        sheet = next(sh for sh in wb.worksheets if sh["G11"].value == obj
+                     and company in str(sh["F17"].value))
+        got_top = [(str(sheet["F3"].value or ""), str(sheet["F5"].value or "").replace(underline, "")),
+                   (str(sheet["I3"].value or ""), str(sheet["I5"].value or "").replace(underline, ""))]
+        got_top = [t if t[1] else None for t in got_top]
+        got_lines = [(str(sheet.cell(row=rr, column=6).value), str(sheet.cell(row=rr, column=9).value))
+                     for rr in range(18, sheet.max_row + 1)
+                     if sheet.cell(row=rr, column=6).value and sheet.cell(row=rr, column=9).value
+                     and not str(sheet.cell(row=rr, column=6).value).startswith("Заявитель: ")]
+        assert got_top == exp_top, (company, obj)
+        assert got_lines == exp_lines, (company, obj)
+        checked += 1
+    assert checked == len(groups)
+
+
+# --- подбор ---------------------------------------------------------------
 
 def test_resolve_endpoint_serves_docv(client):
     r = client.get("/signers", params={"company": "ТОО «Шар-Кұрылыс»",
-                                       "object": "Администрация"},
-                   headers=docv_headers())
+                                       "object": "Администрация"}, headers=docv_headers())
     assert r.status_code == 200
     body = r.json()
-    assert body["utverzhdayu"]["fio"]
-    assert body["utverzhdayu"]["position"]
-    assert body["coordinators"]
-    assert body["source"] in ("объект", "компания")
-
-
-def test_resolve_endpoint_needs_token(client):
+    assert body["utverzhdayu"]["fio"] and body["utverzhdayu"]["position"]
+    assert body["coordinators"] and body["source"] in ("объект", "компания")
     assert client.get("/signers").status_code == 403
 
 
-def test_object_binding_wins_over_company(client):
+def test_company_name_variations_still_find_signers(client):
     store = client.app.state.signers
-    person = store.people()[0]
-    store.save_binding(company="ТОО «Тест»", object_name="", set_name="list_1",
-                       soglasovano=None,
-                       utverzhdayu={"person_id": person["id"], "position": "Директор",
-                                    "company": "ТОО «Тест»"})
-    store.save_binding(company="ТОО «Тест»", object_name="Объект", set_name="list_1",
-                       soglasovano=None,
-                       utverzhdayu={"person_id": person["id"],
-                                    "position": "Управляющий директор",
-                                    "company": "ТОО «Тест»"})
-    assert store.resolve("ТОО «Тест»", "Объект")["utverzhdayu"]["position"] == \
-        "Управляющий директор"
-    assert store.resolve("ТОО «Тест»", "Другой")["utverzhdayu"]["position"] == "Директор"
-    assert store.resolve("ТОО «Тест»", "Другой")["source"] == "компания"
+    expected = store.resolve("ТОО «Шар-Кұрылыс»", "Администрация")
+    assert expected["utverzhdayu"]
+    for variant in ('ТОО «Шар-Кұрылыс» (KZT)', 'ТОО "Шар-Кұрылыс"', 'тоо «шар-курылыс»'):
+        assert store.resolve(variant, "Администрация") == expected, variant
+    unknown = store.resolve("ТОО «Никто»", "Нигде")
+    assert unknown["coordinators"] == [] and unknown["utverzhdayu"] is None
 
 
-def test_directory_link_refreshes_fio(client):
-    """Структура Doc-V шлёт ФИО полностью, в шаблоне были инициалы —
-    после связывания печатается то, что в Doc-V."""
+def test_objects_with_brackets_stay_distinct(client):
     store = client.app.state.signers
-    before = store.resolve("ТОО «Шар-Кұрылыс»", "Администрация")["utverzhdayu"]["fio"]
-    assert before == "Аманов Б.Ш."
-    client.post("/directory/structura", headers=docv_headers(), json={"items": [
-        {"uid": "u-1", "display_name": "Аманов Бауыржан Шарипович",
-         "position": "Генеральный директор", "department": "Дирекция"}]})
-    result = store.link_directory()
-    assert result["matched"] == 1 and result["renamed"] == 1
+    objects = {b["object_name"] for b in store.rules() if b["company"] == 'ТОО "СМУ Аргон"'}
+    assert {"Школа (Нұра)", "Школа (Тельман)", "Школа (Уркер)"} <= objects
+
+
+def test_object_without_own_top_inherits_company_rule(client):
+    store = client.app.state.signers
+    store.save_role("Директор Наследства", title="Директор", holder_name="Наследный Н.Н.")
+    store.save_rule(company="ТОО «Наследство»", object_name="", set_name="list_1",
+                    utverzhdayu="Директор Наследства")
+    store.save_rule(company="ТОО «Наследство»", object_name="ЖК Первый", set_name="list_2")
+    at_object = store.resolve("ТОО «Наследство»", "ЖК Первый")
+    assert at_object["source"] == "объект"
+    assert at_object["utverzhdayu"] == {"fio": "Наследный Н.Н.", "position": "Директор",
+                                        "company": "ТОО «Наследство»"}
+    # своё правило объекта сильнее
+    store.save_role("Прораб объекта", holder_name="Свой С.С.")
+    store.save_rule(company="ТОО «Наследство»", object_name="ЖК Первый", set_name="list_2",
+                    utverzhdayu="Прораб объекта", utverzhdayu_company="ТОО «Своя»")
+    own = store.resolve("ТОО «Наследство»", "ЖК Первый")["utverzhdayu"]
+    assert own == {"fio": "Свой С.С.", "position": "Прораб объекта", "company": "ТОО «Своя»"}
+
+
+def test_expense_type_skips_lines(client):
+    store = client.app.state.signers
+    with_all = store.resolve('ТОО "СМУ Аргон"', 'ЖК "New Line"', expense_type="СМР")
+    salary = store.resolve('ТОО "СМУ Аргон"', 'ЖК "New Line"', expense_type="Зарплата")
+    pto = "Начальник производственно-технического отдела"
+    assert any(c["position"] == pto for c in with_all["coordinators"])
+    assert not any(c["position"] == pto for c in salary["coordinators"])
+
+
+# --- должности: один человек, ФИО из Структуры -----------------------------
+
+def test_role_takes_fio_from_structura_and_title_from_itself(client):
+    """Суть модели: человек — из Структуры, роль и печатаемое название —
+    от должности шлюза. Сменился человек на должности — сменилась подпись
+    во всех правилах, где на неё ссылаются."""
+    store = client.app.state.signers
+    _structura(client, [
+        {"uid": "u-1", "display_name": "Аманов Бауыржан Шарипович (Генеральный директор)",
+         "position": "Генеральный директор", "department": "Дирекция"},
+        {"uid": "u-2", "display_name": "Второй Директор", "position": "Директор"}])
+    store.save_role("Гендиректор Шар-Құрылыс", title="Генеральный директор", holder_uid="u-1")
+    for company in ("ТОО «Одна»", "ТОО «Другая»"):
+        store.save_rule(company=company, object_name="", set_name="list_1",
+                        utverzhdayu="Гендиректор Шар-Құрылыс")
+    first = store.resolve("ТОО «Одна»")["utverzhdayu"]
+    # хвост «(Генеральный директор)» из display_name в подпись не идёт
+    assert first == {"fio": "Аманов Бауыржан Шарипович", "position": "Генеральный директор",
+                     "company": "ТОО «Одна»"}
+    store.save_role("Гендиректор Шар-Құрылыс", title="Генеральный директор", holder_uid="u-2")
+    assert store.resolve("ТОО «Одна»")["utverzhdayu"]["fio"] == "Второй Директор"
+    assert store.resolve("ТОО «Другая»")["utverzhdayu"]["fio"] == "Второй Директор"
+
+
+def test_same_title_different_people_are_different_roles(client):
+    store = client.app.state.signers
+    store.save_role("Гендиректор А", title="Генеральный директор", holder_name="А. А.")
+    store.save_role("Гендиректор Б", title="Генеральный директор", holder_name="Б. Б.")
+    store.save_rule(company="ТОО «А»", object_name="", set_name="list_1", utverzhdayu="Гендиректор А")
+    store.save_rule(company="ТОО «Б»", object_name="", set_name="list_1", utverzhdayu="Гендиректор Б")
+    a = store.resolve("ТОО «А»")["utverzhdayu"]
+    b = store.resolve("ТОО «Б»")["utverzhdayu"]
+    assert a["position"] == b["position"] == "Генеральный директор"
+    assert a["fio"] == "А. А." and b["fio"] == "Б. Б."
+
+
+def test_structura_name_wins_over_typed_name(client):
+    store = client.app.state.signers
+    _structura(client, [{"uid": "u-9", "display_name": "Из Структуры И.С."}])
+    store.save_role("Проверяющий", holder_uid="u-9", holder_name="Вписанный В.В.")
+    store.save_rule(company="ТОО «Кто»", object_name="", set_name="list_1",
+                    soglasovano="Проверяющий")
+    assert store.resolve("ТОО «Кто»")["soglasovano"]["fio"] == "Из Структуры И.С."
+    # uid исчез из Структуры — остаётся вписанное имя, а не пустота
+    _structura(client, [{"uid": "u-other", "display_name": "Другой Д.Д."}])
+    assert store.resolve("ТОО «Кто»")["soglasovano"]["fio"] == "Вписанный В.В."
+
+
+def test_vacant_role_signs_nobody(client):
+    store = client.app.state.signers
+    store.save_role("Пустая должность", title="Никто")
+    store.save_rule(company="ТОО «Пусто»", object_name="", set_name="list_1",
+                    utverzhdayu="Пустая должность")
+    assert store.resolve("ТОО «Пусто»")["utverzhdayu"] is None
+    assert any(r["name"] == "Пустая должность" and r["vacant"] for r in store.roles())
+
+
+def test_role_rename_follows_references_and_delete_is_guarded(client):
+    store = client.app.state.signers
+    store.save_role("Старое имя", holder_name="Кто-то К.К.")
+    store.save_rule(company="ТОО «Переименование»", object_name="", set_name="list_1",
+                    utverzhdayu="Старое имя")
+    store.rename_role("Старое имя", "Новое имя")
+    assert store.resolve("ТОО «Переименование»")["utverzhdayu"]["position"] == "Новое имя"
+    assert store.role_usage("Новое имя") == 1
+    try:
+        store.delete_role("Новое имя")
+        assert False, "используемую должность удалять нельзя"
+    except ValueError:
+        pass
+    store.save_rule(company="ТОО «Переименование»", object_name="", set_name="list_1")
+    store.delete_role("Новое имя")
+    assert not any(r["name"] == "Новое имя" for r in store.roles())
+
+
+def test_link_by_name_fills_uid_once(client):
+    store = client.app.state.signers
+    assert store.resolve("ТОО «Шар-Кұрылыс»", "Администрация")["utverzhdayu"]["fio"] \
+        == "Аманов Б.Ш."
+    _structura(client, [{"uid": "u-1", "display_name": "Аманов Бауыржан Шарипович",
+                         "position": "Генеральный директор"}])
+    result = store.link_by_name()
+    assert result["linked"] >= 1
     after = store.resolve("ТОО «Шар-Кұрылыс»", "Администрация")["utverzhdayu"]
     assert after["fio"] == "Аманов Бауыржан Шарипович"
-    # должность осталась той, под которой он подписывает эту компанию
     assert after["position"] == "Генеральный директор"
-    assert after["company"]
 
 
-def test_fio_key_matches_initials_and_full_name():
+def test_fio_helpers():
     assert fio_key("Аманов Б.Ш.") == fio_key("Аманов Бауыржан Шарипович")
-    assert fio_key("Татин Ә. Ж") == fio_key("Татин Адилет Жанович")
+    assert fio_key("Аманов Б.Ш.") == fio_key("Аманов Бауыржан Шарипович (Гендиректор)")
     assert fio_key("Аманов Б.Ш.") != fio_key("Аманов Дархан Ерланович")
-    assert fio_key("") == ""
+    assert print_name("Иванов И.И. (Прораб)") == "Иванов И.И."
+    assert print_name("  ДРС ") == "ДРС"
 
+
+# --- наборы, реестр предстоящих платежей -----------------------------------
 
 def test_priority_registry_takes_coordinators_from_store(client):
     entry = dict(MODEL["request"][0], organization="ТОО «Шар-Кұрылыс»",
@@ -111,209 +265,69 @@ def test_priority_registry_takes_coordinators_from_store(client):
     assert lines[0] == expected["coordinators"][0]["position"]
 
 
-def test_person_edit_changes_every_signature(client):
+def test_set_delete_guarded(client):
     store = client.app.state.signers
-    person = next(p for p in store.people() if p["fio"] == "Омарова Г.А.")
-    store.save_person(person["id"], "Омарова Гульнара Алиевна", "Главный бухгалтер")
-    resolved = store.resolve("ТОО «Шар-Кұрылыс»", "Администрация")
-    assert any(c["fio"] == "Омарова Гульнара Алиевна" for c in resolved["coordinators"])
+    try:
+        store.delete_set("list_1")
+        assert False
+    except ValueError:
+        pass
+    store.save_set("временный", [{"role": "Главный бухгалтер"}])
+    assert "временный" in store.sets()
+    store.delete_set("временный")
+    assert "временный" not in store.sets()
 
 
-def test_objects_with_brackets_stay_distinct(client):
-    """У объектов скобки — это различие: «Школа (Нұра)» и «Школа (Тельман)»
-    разные стройки. У компаний скобки — мусор вроде «(KZT)»."""
-    store = client.app.state.signers
-    objects = {b["object_name"] for b in store.bindings()
-               if b["company"] == 'ТОО "СМУ Аргон"'}
-    assert {"Школа (Нұра)", "Школа (Тельман)", "Школа (Уркер)"} <= objects
-    person = store.people()[0]
-    store.save_binding(company='ТОО "СМУ Аргон"', object_name="Школа (Нұра)",
-                       set_name="list_1", soglasovano=None,
-                       utverzhdayu={"person_id": person["id"], "position": "Прораб",
-                                    "company": "тест"})
-    assert store.resolve('ТОО "СМУ Аргон"', "Школа (Нұра)")["utverzhdayu"]["position"] \
-        == "Прораб"
-    other = store.resolve('ТОО "СМУ Аргон"', "Школа (Тельман)")
-    assert other["utverzhdayu"] is None or other["utverzhdayu"]["position"] != "Прораб"
+# --- перенос с прежней модели ---------------------------------------------
 
+def test_legacy_tables_migrate_into_roles(tmp_path):
+    """База прошлой недели: люди отдельной таблицей и четыре способа
+    указать подписанта. После переноса — только должности, и реестр
+    печатается так же."""
+    db = tmp_path / "gateway.db"
+    init_db(db)
+    with connect(db) as conn:
+        conn.executescript("""
+        CREATE TABLE signer_people (id INTEGER PRIMARY KEY, fio TEXT, fio_key TEXT,
+            position TEXT, docv_uid TEXT, updated_at TEXT);
+        CREATE TABLE signer_positions (name TEXT PRIMARY KEY, holder_uid TEXT,
+            holder_person_id INTEGER, updated_at TEXT);
+        CREATE TABLE signer_sets (name TEXT, ord INTEGER, person_id INTEGER, position TEXT,
+            position_ref TEXT, dept_ref TEXT, print_company TEXT, mark TEXT,
+            skip_expense_types TEXT);
+        CREATE TABLE signer_bindings (id INTEGER PRIMARY KEY, company TEXT, company_key TEXT,
+            object_name TEXT, object_key TEXT, set_name TEXT,
+            soglasovano_id INTEGER, soglasovano_position TEXT, soglasovano_company TEXT,
+            soglasovano_ref TEXT, soglasovano_dept TEXT,
+            utverzhdayu_id INTEGER, utverzhdayu_position TEXT, utverzhdayu_company TEXT,
+            utverzhdayu_ref TEXT, utverzhdayu_dept TEXT);
+        INSERT INTO signer_people VALUES (1,'Аманов Б.Ш.','аманов бш','Генеральный директор','',''),
+                                         (2,'Омарова Г.А.','омарова га','Главный бухгалтер','','');
+        INSERT INTO signer_positions VALUES ('Финансовый директор','u-fin',NULL,'');
+        INSERT INTO signer_sets VALUES ('list_1',0,2,'','','','','',''),
+                                       ('list_1',1,NULL,'','gw:Финансовый директор','','','',''),
+                                       ('list_1',2,NULL,'','u-str','','ТОО «Стр»','СОГЛАСОВАНО','');
+        INSERT INTO signer_bindings VALUES (1,'ТОО «Тест»','тоо тест','','','list_1',
+            NULL,'','','','', 1,'Генеральный директор','ТОО "Шар Құрылыс"','','');
+        INSERT INTO directories VALUES ('structura','u-fin','{"name":"Финансист Ф.Ф.","position":"Финансовый директор"}',''),
+                                       ('structura','u-str','{"name":"Структурный С.С.","position":"Юрист"}','');
+        """)
+    store = SignerStore(db)
+    moved = store.migrate_legacy()
+    assert moved == 1
+    with connect(db) as conn:
+        left = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert not {"signer_people", "signer_sets", "signer_bindings", "signer_positions"} & left
 
-def _structura(client, items):
-    r = client.post("/directory/structura", headers=docv_headers(), json={"items": items})
-    assert r.status_code == 200
-
-
-def test_signature_follows_whoever_holds_the_position(client):
-    """Главное: привязка указывает должность, а подпись идёт от того, кто
-    её занимает сейчас. Сменился сотрудник в Doc-V — сменилась подпись."""
-    store = client.app.state.signers
-    _structura(client, [{"uid": "u-10", "display_name": "Петров Пётр Петрович",
-                         "position": "Финансовый директор", "department": "Финансы"}])
-    store.save_binding(company="ТОО «Смена»", object_name="", set_name="list_1",
-                       soglasovano=None,
-                       utverzhdayu={"ref": "Финансовый директор", "dept": "Финансы",
-                                    "position": "Генеральный директор",
-                                    "company": "ТОО «Смена»"})
-    first = store.resolve("ТОО «Смена»")["utverzhdayu"]
-    assert first["fio"] == "Петров Пётр Петрович"
-    # печатается должность из привязки, а не из Структуры
-    assert first["position"] == "Генеральный директор"
-
-    _structura(client, [{"uid": "u-11", "display_name": "Сидорова Анна Ивановна",
-                         "position": "Финансовый директор", "department": "Финансы"}])
-    second = store.resolve("ТОО «Смена»")["utverzhdayu"]
-    assert second["fio"] == "Сидорова Анна Ивановна"
-    assert second["position"] == "Генеральный директор"
-
-
-def test_position_reference_can_use_uid(client):
-    """Ссылкой годится и шифр записи: Doc-V шлёт то название, то uid."""
-    store = client.app.state.signers
-    _structura(client, [{"uid": "uid-777", "display_name": "Ким Олег Сергеевич",
-                         "position": "Начальник ЮО", "department": "Юротдел"}])
-    store.save_binding(company="ТОО «Шифр»", object_name="", set_name="list_1",
-                       soglasovano={"ref": "uid-777", "position": "Начальник ЮО",
-                                    "company": "ТОО «Шифр»"},
-                       utverzhdayu=None)
-    assert store.resolve("ТОО «Шифр»")["soglasovano"]["fio"] == "Ким Олег Сергеевич"
-
-
-def test_vacant_position_leaves_signature_empty(client, caplog):
-    store = client.app.state.signers
-    _structura(client, [{"uid": "u-12", "display_name": "Кто-то", "position": "Кладовщик"}])
-    store.save_binding(company="ТОО «Пусто»", object_name="", set_name="list_1",
-                       soglasovano=None,
-                       utverzhdayu={"ref": "Такой должности нет", "position": "Директор",
-                                    "company": "ТОО «Пусто»"})
-    assert store.resolve("ТОО «Пусто»")["utverzhdayu"] is None
-
-
-def test_positions_list_shows_holders(client):
-    _structura(client, [
-        {"uid": "u-20", "display_name": "Первый И.И.", "position": "Прораб",
-         "department": "СМР"},
-        {"uid": "u-21", "display_name": "Второй П.П.", "position": "Прораб",
-         "department": "СМР"}])
-    positions = client.app.state.signers.positions()
-    prorab = next(p for p in positions if p["position"] == "Прораб")
-    assert prorab["department"] == "СМР"
-    assert prorab["holders"] == ["Второй П.П.", "Первый И.И."]
-
-
-def test_employee_reference_keeps_person_and_gateway_position(client):
-    """Второй способ: выбрать сотрудника по uid и дать ему должность
-    шлюза. Печатается должность шлюза, а не та, что в Структуре."""
-    store = client.app.state.signers
-    _structura(client, [{"uid": "05ab617e-6fff", "display_name": "ДРС",
-                         "position": "Начальник участка",
-                         "department": "МЖК New Line",
-                         "department_uid": "a0227bc0-580a"}])
-    store.save_binding(company="ТОО «Уид»", object_name="", set_name="list_1",
-                       soglasovano=None,
-                       utverzhdayu={"ref": "05ab617e-6fff",
-                                    "position": "Генеральный директор",
-                                    "company": "ТОО «Уид»"})
-    signer = store.resolve("ТОО «Уид»")["utverzhdayu"]
-    assert signer["fio"] == "ДРС"
-    assert signer["position"] == "Генеральный директор"   # должность шлюза
-    assert signer["company"] == "ТОО «Уид»"
-
-    # Doc-V переименовал сотрудника — подпись идёт за ним
-    _structura(client, [{"uid": "05ab617e-6fff", "display_name": "Дюсенов Р.С.",
-                         "position": "Заместитель директора",
-                         "department": "МЖК New Line"}])
-    again = store.resolve("ТОО «Уид»")["utverzhdayu"]
-    assert again["fio"] == "Дюсенов Р.С."
-    assert again["position"] == "Генеральный директор"
-
-
-def test_gateway_position_catalogue(client):
-    store = client.app.state.signers
-    catalogue = store.gateway_positions()
-    assert "Генеральный директор" in catalogue and "Главный бухгалтер" in catalogue
-    # должность, набранная руками, попадает в каталог сама
-    person = store.people()[0]
-    store.save_binding(company="ТОО «Каталог»", object_name="", set_name="list_1",
-                       soglasovano=None,
-                       utverzhdayu={"person_id": person["id"],
-                                    "position": "Управляющий партнёр",
-                                    "company": "ТОО «Каталог»"})
-    assert "Управляющий партнёр" in store.gateway_positions()
-    store.delete_position("Управляющий партнёр")
-    assert "Управляющий партнёр" not in store.gateway_positions()
-    # из каталога убрали, а подпись осталась прежней
-    assert store.resolve("ТОО «Каталог»")["utverzhdayu"]["position"] == "Управляющий партнёр"
-
-
-def test_staff_without_position_still_selectable(client):
-    """Запись без должности годится как сотрудник, но не как должность."""
-    _structura(client, [{"uid": "u-30", "display_name": "Безлошадный Б.Б."}])
-    store = client.app.state.signers
-    assert any(p["uid"] == "u-30" for p in store.staff())
-    assert not any(p["position"] == "" for p in store.positions())
-
-
-def test_gateway_position_holds_a_person_and_signs(client):
-    """Должность шлюза — то, к чему привязываются подписи. Меняем того,
-    кто её занимает, в одном месте, и это доходит до всех реестров."""
-    from gateway.signers import gw_slot, parse_slot
-    store = client.app.state.signers
-    _structura(client, [
-        {"uid": "u-100", "display_name": "Первый Директор", "position": "Директор"},
-        {"uid": "u-101", "display_name": "Второй Директор", "position": "Директор"}])
-    store.add_position("Генеральный директор Шар-Құрылыс")
-    store.assign_position("Генеральный директор Шар-Құрылыс", holder_uid="u-100")
-
-    chosen = parse_slot(gw_slot("Генеральный директор Шар-Құрылыс"))
-    store.save_binding(company="ТОО «Должность»", object_name="", set_name="list_1",
-                       soglasovano=None,
-                       utverzhdayu={**chosen, "position": "", "company": "ТОО «Должность»"})
-    signer = store.resolve("ТОО «Должность»")["utverzhdayu"]
-    assert signer["fio"] == "Первый Директор"
-    # пустая должность в привязке — печатается название должности шлюза
-    assert signer["position"] == "Генеральный директор Шар-Құрылыс"
-
-    store.assign_position("Генеральный директор Шар-Құрылыс", holder_uid="u-101")
-    assert store.resolve("ТОО «Должность»")["utverzhdayu"]["fio"] == "Второй Директор"
-
-
-def test_gateway_position_counts_and_guards_deletion(client):
-    from gateway.signers import gw_slot, parse_slot
-    store = client.app.state.signers
-    store.add_position("Хранитель печати")
-    assert store.position_usage("Хранитель печати") == 0
-    person = store.people()[0]
-    store.assign_position("Хранитель печати", holder_person_id=person["id"])
-    store.save_binding(company="ТОО «Счётчик»", object_name="", set_name="list_1",
-                       soglasovano=parse_slot(gw_slot("Хранитель печати")),
-                       utverzhdayu=None)
-    assert store.position_usage("Хранитель печати") == 1
-    card = next(c for c in store.position_cards() if c["name"] == "Хранитель печати")
-    assert card["holder"] == person["fio"] and card["used"] == 1 and not card["vacant"]
-
-
-def test_vacant_gateway_position_signs_nobody(client):
-    from gateway.signers import gw_slot, parse_slot
-    store = client.app.state.signers
-    store.add_position("Ничей пост")
-    store.save_binding(company="ТОО «Ничей»", object_name="", set_name="list_1",
-                       soglasovano=None,
-                       utverzhdayu={**parse_slot(gw_slot("Ничей пост")),
-                                    "position": "", "company": "ТОО «Ничей»"})
-    assert store.resolve("ТОО «Ничей»")["utverzhdayu"] is None
-
-
-def test_object_without_own_top_inherits_company_rule(client):
-    """Объект, у которого верхний блок не задан, берёт его у компании:
-    иначе одного и того же утверждающего пришлось бы вписывать в каждый."""
-    store = client.app.state.signers
-    person = store.people()[0]
-    store.save_binding(company="ТОО «Наследство»", object_name="", set_name="list_1",
-                       soglasovano=None,
-                       utverzhdayu={"person_id": person["id"], "position": "Директор",
-                                    "company": "ТОО «Наследство»"})
-    store.save_binding(company="ТОО «Наследство»", object_name="ЖК Первый",
-                       set_name="list_2", soglasovano=None, utverzhdayu=None)
-    at_object = store.resolve("ТОО «Наследство»", "ЖК Первый")
-    assert at_object["source"] == "объект"          # правило объекта своё
-    assert at_object["utverzhdayu"]["fio"] == person["fio"]   # а подписант — от компании
-    assert at_object["utverzhdayu"]["position"] == "Директор"
+    resolved = store.resolve("ТОО «Тест»")
+    assert resolved["utverzhdayu"] == {"fio": "Аманов Б.Ш.", "position": "Генеральный директор",
+                                       "company": 'ТОО "Шар Құрылыс"'}
+    assert [c["fio"] for c in resolved["coordinators"]] == \
+        ["Омарова Г.А.", "Финансист Ф.Ф.", "Структурный С.С."]
+    assert resolved["coordinators"][2]["mark"] == "СОГЛАСОВАНО"
+    assert resolved["coordinators"][2]["position"] == "Юрист"
+    roles = {r["name"]: r for r in store.roles()}
+    assert roles["Финансовый директор"]["holder_uid"] == "u-fin"
+    assert roles["Юрист"]["holder_uid"] == "u-str"
+    # повторный запуск ничего не ломает
+    assert store.migrate_legacy() == 0

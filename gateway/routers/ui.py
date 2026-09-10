@@ -25,7 +25,6 @@ from ..renderers.registry_priority import render_priority
 from ..renderers.typst_renderer import (TypstError, render_typst, typst_available,
                                         typst_binary)
 from ..security import ADMIN_COOKIE, _match
-from ..signers import parse_slot, slot_value
 from .render import _deliver, _sorted
 
 log = logging.getLogger(__name__)
@@ -873,247 +872,72 @@ async def settings_save(request: Request):
 
 
 # --- подписанты -----------------------------------------------------------
+#
+# Источников правды два: люди — Структура Doc-V, роли в подписи — должности
+# шлюза. Правила компаний и наборы ссылаются только на должности.
 
-def _binding_rows(store, search: str = "") -> list[dict]:
-    """Привязки с уже подставленными ФИО — таблица должна читаться
-    глазами, а не показывать идентификаторы. Подписант считается тем же
-    подбором, что и при выпуске реестра: иначе выбор из Структуры или
-    должность шлюза выглядели бы в таблице пустыми."""
+def _rule_rows(store, search: str = "", ctx: dict | None = None) -> list[dict]:
+    """Правила с уже подставленными подписями — тем же подбором, что и
+    при выпуске реестра, иначе таблица показывала бы не то, что печатается."""
+    ctx = ctx or store.context()
     needle = search.strip().casefold()
-    ctx = store.context()
     rows = []
-    for row in store.bindings():
+    for row in store.rules():
         if needle and needle not in f"{row['company']} {row['object_name']}".casefold():
             continue
         resolved = store.resolve(row["company"], row["object_name"], ctx=ctx)
         rows.append({**row, "left": resolved["soglasovano"],
-                     "right": resolved["utverzhdayu"],
-                     "coordinators": resolved["coordinators"]})
+                     "right": resolved["utverzhdayu"]})
     return rows
 
 
 def _company_cards(rows: list[dict]) -> list[dict]:
-    """Привязки по компаниям: две сотни строк подряд читать невозможно,
-    а компаний два десятка. Правило на всю компанию выносится в шапку
-    карточки, объекты со своим правилом — списком под ней."""
+    """Правила по компаниям: сотню строк подряд читать невозможно, а
+    компаний два десятка. Правило на всю компанию — в шапку карточки."""
     cards: dict[str, dict] = {}
     for row in rows:
         card = cards.setdefault(row["company"], {
-            "company": row["company"], "whole": None, "objects": [], "count": 0})
-        card["count"] += 1
+            "company": row["company"], "whole": None, "objects": 0})
         if row["object_name"]:
-            card["objects"].append(row)
+            card["objects"] += 1
         else:
             card["whole"] = row
-    for card in cards.values():
-        card["objects"].sort(key=lambda r: r["object_name"])
     return sorted(cards.values(), key=lambda c: c["company"])
 
 
+def _role_options(store, ctx: dict | None = None) -> list[dict]:
+    return store.roles(ctx or store.context())
+
+
+def _signers_ctx(request: Request, tab: str, **extra) -> dict:
+    store = request.app.state.signers
+    return {"tab": tab, "stats": store.stats(), **extra}
+
+
 @router.get("/ui/signers")
-def signers_page(request: Request, search: str = "", company: str = "",
-                 flash: str = "", flash_err: str = ""):
+def signers_page(request: Request, search: str = "", flash: str = "", flash_err: str = ""):
     store = request.app.state.signers
-    rows = _binding_rows(store, search)
-    cards = _company_cards(rows)
-    if company:
-        rows = [r for r in rows if r["company"] == company]
-    return _page(request, "signers.html", "signers", tab="companies", search=search,
-                 company=company, bindings=rows, cards=cards, stats=store.stats(),
-                 flash=flash, flash_err=bool(flash_err))
-
-
-@router.get("/ui/signers/sets")
-def signers_sets_page(request: Request, flash: str = "", flash_err: str = ""):
-    store = request.app.state.signers
-    return _page(request, "signers_sets.html", "signers", tab="sets",
-                 sets=store.sets(), flash=flash, flash_err=bool(flash_err))
-
-
-@router.get("/ui/signers/positions")
-def signers_positions_page(request: Request, flash: str = "", flash_err: str = ""):
-    store = request.app.state.signers
-    return _page(request, "signers_positions.html", "signers", tab="positions",
-                 position_cards=store.position_cards(), staff=_staff_options(store),
-                 people=store.people(), flash=flash, flash_err=bool(flash_err))
-
-
-@router.get("/ui/signers/people")
-def signers_people_page(request: Request, flash: str = "", flash_err: str = ""):
-    store = request.app.state.signers
-    return _page(request, "signers_people.html", "signers", tab="people",
-                 people=store.people(), people_usage=store.people_usage(),
-                 flash=flash, flash_err=bool(flash_err))
-
-
-@router.post("/ui/signers/link")
-def signers_link(request: Request):
-    result = request.app.state.signers.link_directory()
-    audit_log("signers_linked", **result)
-    if not result["staff"]:
-        return RedirectResponse(
-            "/ui/signers/people?flash=В Структуре нет записей с должностью. Выгрузите её"
-            " из Doc-V: действие «HTTP-запрос» POST /directory/structura&flash_err=1",
-            status_code=302)
-    flash = (f"Структура: {result['staff']} сотрудников. Узнали "
-             f"{result['matched']}, из них переименовано {result['renamed']}.")
-    if result["unmatched"]:
-        flash += (f" Не нашли в Doc-V: {result['unmatched']} — им подпись идёт"
-                  " по записи справочника.")
-    return RedirectResponse(f"/ui/signers/people?flash={flash}", status_code=302)
-
-
-@router.post("/ui/signers/people/save")
-async def signers_people_save(request: Request):
-    """Весь список разом: правки существующих и новые строки в одном
-    сохранении — по одному человеку за перезагрузку это мучение."""
-    form = await request.form()
-    store = request.app.state.signers
-    ids = form.getlist("person_id")
-    fios = form.getlist("fio")
-    positions = form.getlist("position")
-    saved = added = 0
-    for i, fio in enumerate(fios):
-        if not str(fio).strip():
-            continue
-        raw = str(ids[i] if i < len(ids) else "").strip()
-        try:
-            store.save_person(int(raw) if raw else None, fio,
-                              positions[i] if i < len(positions) else "")
-        except ValueError:
-            continue
-        saved += 1
-        added += 0 if raw else 1
-    audit_log("signers_people_saved", saved=saved, added=added)
-    tail = f", из них новых {added}" if added else ""
-    return RedirectResponse(f"/ui/signers/people?flash=Сохранено записей: {saved}{tail}",
-                            status_code=302)
-
-
-@router.post("/ui/signers/positions/save")
-async def signers_positions_save(request: Request):
-    form = await request.form()
-    store = request.app.state.signers
-    names = form.getlist("name")
-    slots = form.getlist("slot")
-    saved = 0
-    for i, name in enumerate(names):
-        name = str(name).strip()
-        if not name:
-            continue
-        chosen = parse_slot(slots[i] if i < len(slots) else "")
-        store.add_position(name)
-        store.assign_position(name, holder_uid=chosen["ref"],
-                              holder_person_id=chosen["person_id"])
-        saved += 1
-    audit_log("signers_positions_saved", count=saved)
-    return RedirectResponse(f"/ui/signers/positions?flash=Сохранено должностей: {saved}",
-                            status_code=302)
-
-
-@router.post("/ui/signers/positions/delete")
-async def signers_positions_delete(request: Request):
-    form = await request.form()
-    name = str(form.get("delete") or "")
-    store = request.app.state.signers
-    used = store.position_usage(name)
-    if used:
-        return RedirectResponse(
-            f"/ui/signers/positions?flash=На должность «{name}» ссылаются {used}"
-            " подписей. Сначала переключите их&flash_err=1", status_code=302)
-    store.delete_position(name)
-    audit_log("signers_position_deleted", name=name)
-    return RedirectResponse(f"/ui/signers/positions?flash=Должность «{name}» убрана",
-                            status_code=302)
-
-
-@router.post("/ui/signers/position")
-def signers_position(request: Request, name: str = Form(default=""),
-                     delete: str = Form(default="")):
-    store = request.app.state.signers
-    if delete:
-        used = store.position_usage(delete)
-        if used:
-            return RedirectResponse(
-                f"/ui/signers/positions?flash=На должность «{delete}» ссылаются {used} подписей."
-                " Сначала переключите их&flash_err=1", status_code=302)
-        store.delete_position(delete)
-        audit_log("signers_position_deleted", name=delete)
-        return RedirectResponse(f"/ui/signers/positions?flash=Должность «{delete}» убрана из каталога",
-                                status_code=302)
-    added = store.add_position(name)
-    if not added:
-        return RedirectResponse("/ui/signers/positions?flash=Пустое название&flash_err=1",
-                                status_code=302)
-    return RedirectResponse(f"/ui/signers/positions?flash=Должность «{added}» в каталоге."
-                            " Назначьте на неё человека", status_code=302)
-
-
-@router.post("/ui/signers/position/assign")
-def signers_position_assign(request: Request, name: str = Form(...),
-                            slot: str = Form(default="")):
-    """Кого назначить на должность шлюза. Меняется в одном месте — и
-    меняется во всех подписях, которые на эту должность ссылаются."""
-    store = request.app.state.signers
-    chosen = parse_slot(slot)
-    store.assign_position(name, holder_uid=chosen["ref"],
-                          holder_person_id=chosen["person_id"])
-    audit_log("signers_position_assigned", name=name, holder=slot)
-    used = store.position_usage(name)
-    tail = f" Подписей, где она используется: {used}." if used else ""
-    return RedirectResponse(f"/ui/signers/positions?flash=Назначение для «{name}» сохранено.{tail}",
-                            status_code=302)
-
-
-@router.post("/ui/signers/person")
-def signers_person(request: Request, fio: str = Form(...), position: str = Form(default=""),
-                   person_id: str = Form(default="")):
-    try:
-        request.app.state.signers.save_person(int(person_id) if person_id else None,
-                                              fio, position)
-    except ValueError as exc:
-        return RedirectResponse(f"/ui/signers?flash={exc}&flash_err=1", status_code=302)
-    return RedirectResponse("/ui/signers/people?flash=Сохранено", status_code=302)
-
-
-# Пустая привязка обязана иметь ровно те же ключи, что и строка из базы:
-# форма читает их по имени, и недостающий ключ роняет страницу.
-@router.post("/ui/signers/person/delete/{person_id}")
-def signers_person_delete(request: Request, person_id: int):
-    store = request.app.state.signers
-    used = store.person_usage(person_id)
-    if used:
-        where = ", ".join(used[:5]) + ("…" if len(used) > 5 else "")
-        return RedirectResponse(
-            f"/ui/signers/people?flash=Сначала уберите его из подписей: {where}&flash_err=1",
-            status_code=302)
-    store.delete_person(person_id)
-    audit_log("signers_person_deleted", person_id=person_id)
-    return RedirectResponse("/ui/signers/people?flash=Человек удалён", status_code=302)
+    rows = _rule_rows(store, search)
+    return _page(request, "signers.html", "signers",
+                 **_signers_ctx(request, "companies", search=search, rules=rows,
+                                cards=_company_cards(_rule_rows(store) if search else rows),
+                                flash=flash, flash_err=bool(flash_err)))
 
 
 @router.get("/ui/signers/company")
 def signers_company(request: Request, name: str, flash: str = "", flash_err: str = ""):
     store = request.app.state.signers
-    rows = [r for r in _binding_rows(store) if r["company"] == name]
+    ctx = store.context()
+    rows = [r for r in _rule_rows(store, ctx=ctx) if r["company"] == name]
     if not rows:
         return RedirectResponse("/ui/signers?flash=Такой компании нет&flash_err=1",
                                 status_code=302)
-    # заготовка формы — правило на всю компанию, а его нет, так первая строка
     base = next((r for r in rows if not r["object_name"]), rows[0])
-    current = {role: slot_value(base[f"{role}_ref"], base[f"{role}_dept"],
-                                base[f"{role}_id"])
-               for role in ("soglasovano", "utverzhdayu")}
-    current.update({f"{role}_{field}": base[f"{role}_{field}"]
-                    for role in ("soglasovano", "utverzhdayu")
-                    for field in ("position", "company")})
-    current["set_name"] = base["set_name"]
-    return _page(request, "signers_company.html", "signers", company=name, rows=rows,
-                 current=current, people=store.people(),
-                 positions=_position_options(store), staff=_staff_options(store),
-                 position_cards=store.position_cards(),
-                 gateway_positions=store.gateway_positions(),
-                 set_names=sorted(store.sets()), flash=flash, flash_err=bool(flash_err))
+    return _page(request, "signers_company.html", "signers",
+                 **_signers_ctx(request, "companies", company=name, rules=rows, base=base,
+                                roles=_role_options(store, ctx),
+                                set_names=sorted(store.sets(ctx)),
+                                flash=flash, flash_err=bool(flash_err)))
 
 
 @router.post("/ui/signers/company/apply")
@@ -1122,133 +946,213 @@ async def signers_company_apply(request: Request):
     company = str(form.get("company") or "")
     store = request.app.state.signers
 
-    def role(name: str) -> dict | None:
+    def slot(name: str) -> dict | None:
         if not form.get(f"apply_{name}"):
             return None            # поле не отмечено — не трогаем
-        return {**parse_slot(form.get(f"{name}_slot")),
-                "position": str(form.get(f"{name}_position") or ""),
+        return {"role": str(form.get(f"{name}_role") or ""),
                 "company": str(form.get(f"{name}_company") or "")}
 
     changed = store.apply_to_company(
-        company, soglasovano=role("soglasovano"), utverzhdayu=role("utverzhdayu"),
+        company, soglasovano=slot("soglasovano"), utverzhdayu=slot("utverzhdayu"),
         set_name=str(form.get("set_name") or "") if form.get("apply_set") else None)
-    audit_log("signers_company_applied", company=company, bindings=changed)
+    audit_log("signers_company_applied", company=company, rules=changed)
     link = f"/ui/signers/company?name={quote(company)}"
     if not changed:
         return RedirectResponse(f"{link}&flash=Ничего не отмечено — ничего не изменилось",
                                 status_code=302)
-    return RedirectResponse(f"{link}&flash=Проставлено в {changed} привязок",
+    return RedirectResponse(f"{link}&flash=Проставлено в {changed} правил", status_code=302)
+
+
+EMPTY_RULE = {"id": None, "company": "", "object_name": "", "set_name": "",
+              "soglasovano_role": "", "soglasovano_company": "",
+              "utverzhdayu_role": "", "utverzhdayu_company": ""}
+
+
+@router.get("/ui/signers/rule/{rule_id}")
+def signers_rule(request: Request, rule_id: str, company: str = "", flash: str = ""):
+    store = request.app.state.signers
+    ctx = store.context()
+    rule = {**EMPTY_RULE, "company": company}
+    preview = ""
+    if rule_id != "new":
+        found = store.rule(int(rule_id)) if rule_id.isdigit() else None
+        if found is None:
+            return RedirectResponse("/ui/signers?flash=Правило не найдено&flash_err=1",
+                                    status_code=302)
+        rule = found
+        preview = json.dumps(store.resolve(found["company"], found["object_name"], ctx=ctx),
+                             ensure_ascii=False, indent=1)
+    return _page(request, "signers_rule.html", "signers",
+                 **_signers_ctx(request, "companies", rule=rule,
+                                roles=_role_options(store, ctx),
+                                set_names=sorted(store.sets(ctx)), preview=preview,
+                                flash=flash, flash_err=False))
+
+
+@router.post("/ui/signers/rule/save")
+async def signers_rule_save(request: Request):
+    form = await request.form()
+    raw_id = str(form.get("rule_id") or "").strip()
+    company = str(form.get("company") or "")
+    try:
+        request.app.state.signers.save_rule(
+            company=company, object_name=str(form.get("object_name") or ""),
+            set_name=str(form.get("set_name") or ""),
+            soglasovano=str(form.get("soglasovano_role") or ""),
+            soglasovano_company=str(form.get("soglasovano_company") or ""),
+            utverzhdayu=str(form.get("utverzhdayu_role") or ""),
+            utverzhdayu_company=str(form.get("utverzhdayu_company") or ""),
+            rule_id=int(raw_id) if raw_id else None)
+    except ValueError as exc:
+        return RedirectResponse(f"/ui/signers?flash={exc}&flash_err=1", status_code=302)
+    audit_log("signers_rule_saved", company=company)
+    return RedirectResponse(f"/ui/signers/company?name={quote(company)}"
+                            "&flash=Правило сохранено", status_code=302)
+
+
+@router.post("/ui/signers/rule/delete/{rule_id}")
+def signers_rule_delete(request: Request, rule_id: int):
+    store = request.app.state.signers
+    rule = store.rule(rule_id)
+    store.delete_rule(rule_id)
+    audit_log("signers_rule_deleted", rule_id=rule_id)
+    back = f"/ui/signers/company?name={quote(rule['company'])}" if rule else "/ui/signers"
+    return RedirectResponse(f"{back}{'&' if rule else '?'}flash=Правило удалено",
                             status_code=302)
 
 
-EMPTY_BINDING = {"id": None, "company": "", "object_name": "", "set_name": "",
-                 **{f"{role}{suffix}": None if suffix == "_id" else ""
-                    for role in ("soglasovano", "utverzhdayu")
-                    for suffix in ("_id", "_position", "_company", "_ref", "_dept")}}
+# --- наборы ---
 
-
-def _position_options(store) -> list[dict]:
-    """Должности из Структуры для выпадающих списков — с теми, кто их
-    сейчас занимает: по одному названию должности человека не узнать."""
-    return [{**pos, "value": slot_value(pos["position"], pos["department"])}
-            for pos in store.positions()]
-
-
-def _staff_options(store) -> list[dict]:
-    """Сотрудники из Структуры: ссылка идёт на uid, поэтому подпись
-    останется за этим человеком, даже если его должность там сменится."""
-    return [{**person, "value": slot_value(person["uid"])} for person in store.staff()]
-
-
-@router.get("/ui/signers/binding/{binding_id}")
-def signers_binding(request: Request, binding_id: str, flash: str = ""):
+@router.get("/ui/signers/sets")
+def signers_sets_page(request: Request, flash: str = "", flash_err: str = ""):
     store = request.app.state.signers
-    binding = dict(EMPTY_BINDING)
-    preview = ""
-    if binding_id != "new":
-        found = next((b for b in store.bindings() if str(b["id"]) == binding_id), None)
-        if found is None:
-            return RedirectResponse("/ui/signers?flash=Привязка не найдена&flash_err=1",
-                                    status_code=302)
-        binding = found
-        preview = json.dumps(store.resolve(found["company"], found["object_name"]),
-                             ensure_ascii=False, indent=1)
-    slots = {role: slot_value(binding[f"{role}_ref"], binding[f"{role}_dept"],
-                              binding[f"{role}_id"])
-             for role in ("soglasovano", "utverzhdayu")}
-    return _page(request, "signers_binding.html", "signers", binding=binding,
-                 people=store.people(), set_names=sorted(store.sets()),
-                 positions=_position_options(store), staff=_staff_options(store),
-                 gateway_positions=store.gateway_positions(),
-                 position_cards=store.position_cards(), slots=slots,
-                 preview=preview, flash=flash, flash_err=False)
+    ctx = store.context()
+    used = {}
+    for r in store.rules():
+        used[r["set_name"]] = used.get(r["set_name"], 0) + 1
+    return _page(request, "signers_sets.html", "signers",
+                 **_signers_ctx(request, "sets", sets=store.sets(ctx), used=used,
+                                flash=flash, flash_err=bool(flash_err)))
 
 
-@router.post("/ui/signers/binding/save")
-async def signers_binding_save(request: Request):
-    form = await request.form()
-
-    def role(name: str) -> dict | None:
-        slot = parse_slot(form.get(f"{name}_slot"))
-        if not slot["person_id"] and not slot["ref"]:
-            return None
-        return {**slot, "position": str(form.get(f"{name}_position") or ""),
-                "company": str(form.get(f"{name}_company") or "")}
-
-    raw_id = str(form.get("binding_id") or "").strip()
-    try:
-        request.app.state.signers.save_binding(
-            company=str(form.get("company") or ""),
-            object_name=str(form.get("object_name") or ""),
-            set_name=str(form.get("set_name") or ""),
-            soglasovano=role("soglasovano"), utverzhdayu=role("utverzhdayu"),
-            binding_id=int(raw_id) if raw_id else None)
-    except ValueError as exc:
-        return RedirectResponse(f"/ui/signers?flash={exc}&flash_err=1", status_code=302)
-    audit_log("signers_binding_saved", company=str(form.get("company") or ""))
-    return RedirectResponse("/ui/signers?flash=Привязка сохранена", status_code=302)
-
-
-@router.post("/ui/signers/binding/delete/{binding_id}")
-def signers_binding_delete(request: Request, binding_id: int):
-    request.app.state.signers.delete_binding(binding_id)
-    audit_log("signers_binding_deleted", binding_id=binding_id)
-    return RedirectResponse("/ui/signers?flash=Привязка удалена", status_code=302)
+@router.post("/ui/signers/sets/new")
+def signers_set_new(request: Request, name: str = Form(...)):
+    name = name.strip()
+    if not name:
+        return RedirectResponse("/ui/signers/sets?flash=Имя набора пустое&flash_err=1",
+                                status_code=302)
+    return RedirectResponse(f"/ui/signers/set/{quote(name)}", status_code=302)
 
 
 @router.get("/ui/signers/set/{name}")
 def signers_set(request: Request, name: str, flash: str = ""):
     store = request.app.state.signers
-    rows = [{**dict(r), "slot": slot_value(r["position_ref"], r["dept_ref"],
-                                           r["person_id"])}
-            for r in store.sets().get(name, [])]
-    used = sum(1 for b in store.bindings() if b["set_name"] == name)
-    return _page(request, "signers_set.html", "signers", name=name, rows=rows,
-                 people=store.people(), positions=_position_options(store),
-                 staff=_staff_options(store),
-                 gateway_positions=store.gateway_positions(),
-                 position_cards=store.position_cards(),
-                 used=used, flash=flash, flash_err=False)
+    ctx = store.context()
+    rows = store.sets(ctx).get(name, [])
+    used = sum(1 for r in store.rules() if r["set_name"] == name)
+    return _page(request, "signers_set.html", "signers",
+                 **_signers_ctx(request, "sets", name=name, rows=rows, used=used,
+                                roles=_role_options(store, ctx), flash=flash,
+                                flash_err=False))
 
 
 @router.post("/ui/signers/set/{name}/save")
 async def signers_set_save(request: Request, name: str):
     form = await request.form()
-    slots = form.getlist("slot")
-    positions = form.getlist("position")
+    roles = form.getlist("role")
     companies = form.getlist("print_company")
     marks = form.getlist("mark")
     skips = form.getlist("skip_expense_types")
-    entries = []
-    for i, raw in enumerate(slots):
-        slot = parse_slot(raw)
-        if not slot["person_id"] and not slot["ref"]:
-            continue
-        entries.append({**slot, "position": positions[i], "company": companies[i],
-                        "mark": marks[i], "skip_expense_types": skips[i]})
+    lines = [{"role": roles[i], "company": companies[i], "mark": marks[i],
+              "skip_expense_types": skips[i]} for i in range(len(roles))]
     try:
-        request.app.state.signers.save_set(name, entries)
+        count = request.app.state.signers.save_set(name, lines)
     except ValueError as exc:
-        return RedirectResponse(f"/ui/signers?flash={exc}&flash_err=1", status_code=302)
-    audit_log("signers_set_saved", name=name, count=len(entries))
-    return RedirectResponse(f"/ui/signers/set/{name}?flash=Набор сохранён", status_code=302)
+        return RedirectResponse(f"/ui/signers/sets?flash={exc}&flash_err=1", status_code=302)
+    audit_log("signers_set_saved", name=name, count=count)
+    return RedirectResponse(f"/ui/signers/set/{quote(name)}?flash=Набор сохранён:"
+                            f" {count} подписей", status_code=302)
+
+
+@router.post("/ui/signers/set/{name}/delete")
+def signers_set_delete(request: Request, name: str):
+    try:
+        request.app.state.signers.delete_set(name)
+    except ValueError as exc:
+        return RedirectResponse(f"/ui/signers/sets?flash={exc}&flash_err=1", status_code=302)
+    audit_log("signers_set_deleted", name=name)
+    return RedirectResponse(f"/ui/signers/sets?flash=Набор «{name}» удалён", status_code=302)
+
+
+# --- должности шлюза ---
+
+@router.get("/ui/signers/roles")
+def signers_roles_page(request: Request, flash: str = "", flash_err: str = ""):
+    store = request.app.state.signers
+    ctx = store.context()
+    return _page(request, "signers_roles.html", "signers",
+                 **_signers_ctx(request, "roles", roles=store.roles(ctx),
+                                staff=sorted(ctx["staff"].values(), key=lambda p: p["fio"]),
+                                flash=flash, flash_err=bool(flash_err)))
+
+
+@router.post("/ui/signers/roles/save")
+async def signers_roles_save(request: Request):
+    """Весь каталог разом: имена, печатаемые названия, назначения."""
+    form = await request.form()
+    store = request.app.state.signers
+    olds = form.getlist("old_name")
+    names = form.getlist("name")
+    titles = form.getlist("title")
+    uids = form.getlist("holder_uid")
+    fallbacks = form.getlist("holder_name")
+    saved, renamed = 0, 0
+    for i, name in enumerate(names):
+        name = str(name).strip()
+        if not name:
+            continue
+        old = str(olds[i] if i < len(olds) else "").strip()
+        try:
+            if old and old != name:
+                store.rename_role(old, name)
+                renamed += 1
+            store.save_role(name, title=titles[i] if i < len(titles) else "",
+                            holder_uid=uids[i] if i < len(uids) else "",
+                            holder_name=fallbacks[i] if i < len(fallbacks) else "")
+        except ValueError as exc:
+            return RedirectResponse(f"/ui/signers/roles?flash={exc}&flash_err=1",
+                                    status_code=302)
+        saved += 1
+    audit_log("signers_roles_saved", saved=saved, renamed=renamed)
+    tail = f", переименовано {renamed}" if renamed else ""
+    return RedirectResponse(f"/ui/signers/roles?flash=Сохранено должностей: {saved}{tail}",
+                            status_code=302)
+
+
+@router.post("/ui/signers/roles/delete")
+async def signers_roles_delete(request: Request):
+    form = await request.form()
+    name = str(form.get("delete") or "")
+    try:
+        request.app.state.signers.delete_role(name)
+    except ValueError as exc:
+        return RedirectResponse(f"/ui/signers/roles?flash={exc}. Сначала переключите их"
+                                "&flash_err=1", status_code=302)
+    audit_log("signers_role_deleted", name=name)
+    return RedirectResponse(f"/ui/signers/roles?flash=Должность «{name}» убрана",
+                            status_code=302)
+
+
+@router.post("/ui/signers/roles/link")
+def signers_roles_link(request: Request):
+    result = request.app.state.signers.link_by_name()
+    audit_log("signers_roles_linked", **result)
+    if not result["staff"]:
+        return RedirectResponse(
+            "/ui/signers/roles?flash=Структура пуста. Выгрузите её из Doc-V:"
+            " действие «HTTP-запрос» POST /directory/structura&flash_err=1",
+            status_code=302)
+    flash = (f"Сопоставлено по ФИО: {result['linked']}."
+             + (f" Не нашлись в Структуре: {result['left']} — выберите руками."
+                if result["left"] else ""))
+    return RedirectResponse(f"/ui/signers/roles?flash={flash}", status_code=302)

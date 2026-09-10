@@ -52,49 +52,33 @@ CREATE TABLE IF NOT EXISTS directories (
   updated_at TEXT NOT NULL,
   PRIMARY KEY (name, uid)
 );
-CREATE TABLE IF NOT EXISTS signer_people (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  fio TEXT NOT NULL,
-  fio_key TEXT NOT NULL UNIQUE,
-  position TEXT NOT NULL DEFAULT '',
-  docv_uid TEXT NOT NULL DEFAULT '',
-  updated_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS signer_positions (
+CREATE TABLE IF NOT EXISTS signer_roles (
   name TEXT PRIMARY KEY,
+  title TEXT NOT NULL DEFAULT '',
   holder_uid TEXT NOT NULL DEFAULT '',
-  holder_person_id INTEGER REFERENCES signer_people(id),
+  holder_name TEXT NOT NULL DEFAULT '',
   updated_at TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS signer_sets (
-  name TEXT NOT NULL,
+CREATE TABLE IF NOT EXISTS signer_set_lines (
+  set_name TEXT NOT NULL,
   ord INTEGER NOT NULL,
-  person_id INTEGER REFERENCES signer_people(id) ON DELETE CASCADE,
-  position TEXT NOT NULL DEFAULT '',
-  position_ref TEXT NOT NULL DEFAULT '',
-  dept_ref TEXT NOT NULL DEFAULT '',
+  role TEXT NOT NULL,
   print_company TEXT NOT NULL DEFAULT '',
   mark TEXT NOT NULL DEFAULT '',
   skip_expense_types TEXT NOT NULL DEFAULT '',
-  PRIMARY KEY (name, ord)
+  PRIMARY KEY (set_name, ord)
 );
-CREATE TABLE IF NOT EXISTS signer_bindings (
+CREATE TABLE IF NOT EXISTS signer_rules (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   company TEXT NOT NULL,
   company_key TEXT NOT NULL,
   object_name TEXT NOT NULL DEFAULT '',
   object_key TEXT NOT NULL DEFAULT '',
   set_name TEXT NOT NULL,
-  soglasovano_id INTEGER REFERENCES signer_people(id),
-  soglasovano_position TEXT NOT NULL DEFAULT '',
+  soglasovano_role TEXT NOT NULL DEFAULT '',
   soglasovano_company TEXT NOT NULL DEFAULT '',
-  soglasovano_ref TEXT NOT NULL DEFAULT '',
-  soglasovano_dept TEXT NOT NULL DEFAULT '',
-  utverzhdayu_id INTEGER REFERENCES signer_people(id),
-  utverzhdayu_position TEXT NOT NULL DEFAULT '',
+  utverzhdayu_role TEXT NOT NULL DEFAULT '',
   utverzhdayu_company TEXT NOT NULL DEFAULT '',
-  utverzhdayu_ref TEXT NOT NULL DEFAULT '',
-  utverzhdayu_dept TEXT NOT NULL DEFAULT '',
   UNIQUE (company_key, object_key)
 );
 CREATE TABLE IF NOT EXISTS heartbeat (
@@ -114,27 +98,8 @@ def connect(path: Path) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
-# Колонки, добавленные после первого выпуска: база на сервере уже
-# создана, поэтому CREATE TABLE их не заведёт — дописываем на месте.
-_ADDED_COLUMNS = {
-    "signer_positions": [("holder_uid", "TEXT NOT NULL DEFAULT \'\'"),
-                         ("holder_person_id", "INTEGER")],
-    "signer_sets": [("position_ref", "TEXT NOT NULL DEFAULT \'\'"),
-                    ("dept_ref", "TEXT NOT NULL DEFAULT \'\'")],
-    "signer_bindings": [("soglasovano_ref", "TEXT NOT NULL DEFAULT \'\'"),
-                        ("soglasovano_dept", "TEXT NOT NULL DEFAULT \'\'"),
-                        ("utverzhdayu_ref", "TEXT NOT NULL DEFAULT \'\'"),
-                        ("utverzhdayu_dept", "TEXT NOT NULL DEFAULT \'\'")],
-}
-
-
 def init_db(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with connect(path) as conn:
         conn.executescript(_SCHEMA)
-        for table, columns in _ADDED_COLUMNS.items():
-            have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
-            for name, decl in columns:
-                if name not in have:
-                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
     path.chmod(0o600)

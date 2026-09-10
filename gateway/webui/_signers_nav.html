@@ -1,0 +1,21 @@
+{# Вкладки раздела «Подписанты» и общий выбор должности #}
+{% macro nav(tab) -%}
+<div class="subnav">
+  <a href="/ui/signers" class="{{ 'on' if tab == 'companies' }}">Компании</a>
+  <a href="/ui/signers/sets" class="{{ 'on' if tab == 'sets' }}">Наборы согласующих</a>
+  <a href="/ui/signers/roles" class="{{ 'on' if tab == 'roles' }}">Должности</a>
+</div>
+{%- endmacro %}
+
+{# Один список выбора должности с поиском. empty — подпись первого пункта. #}
+{% macro role_picker(field, roles, selected, empty='— не печатать —') -%}
+<div class="combo">
+  <input type="text" data-filter-for="{{ field }}" placeholder="поиск: должность или фамилия">
+  <select name="{{ field }}">
+    <option value="">{{ empty }}</option>
+    {% for r in roles %}
+    <option value="{{ r.name }}" {{ 'selected' if r.name == selected }}>{{ r.name }} → {{ r.holder or 'никто не назначен' }}{% if r.title != r.name %} · печатается «{{ r.title }}»{% endif %}</option>
+    {% endfor %}
+  </select>
+</div>
+{%- endmacro %}
