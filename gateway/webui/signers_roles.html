@@ -2,14 +2,13 @@
 {% from "_signers_nav.html" import nav %}
 {% block title %}Должности — Doc-V Gateway{% endblock %}
 
-{# Кто занимает: сотрудник из Структуры; вписанное ФИО — запас, если человека в Doc-V нет #}
 {% macro holder_picker(selected) -%}
 <div class="combo">
-  <input type="text" data-filter-for="holder_uid" placeholder="поиск: фамилия, должность, отдел">
+  <input type="text" data-filter-for="holder_uid" placeholder="Поиск">
   <select name="holder_uid">
-    <option value="">— нет в Структуре, впишу ФИО справа —</option>
+    <option value="">Отсутствует</option>
     {% for p in staff %}
-    <option value="{{ p.uid }}" {{ 'selected' if p.uid == selected }}>{{ p.fio }}{% if p.position %} · {{ p.position }}{% endif %}{% if p.department %} · {{ p.department }}{% endif %}</option>
+    <option value="{{ p.uid }}" {{ 'selected' if p.uid == selected }}>{{ p.fio }}{% if p.position %}( {{ p.position }} ){% endif %}{% if p.department %}/{{ p.department }}{% endif %}</option>
     {% endfor %}
   </select>
 </div>
@@ -70,7 +69,7 @@
         {% else %}
         <button class="btn ghost icon sm" title="Удалить должность" aria-label="Удалить должность"
                 formaction="/ui/signers/roles/delete" name="delete" value="{{ r.name }}"
-                onclick="return confirm('Убрать «{{ r.name }}»? Несохранённые правки пропадут.')">{{ icon('x') }}</button>
+                onclick="return confirm('Убрать «{{ r.name }}»?')">{{ icon('x') }}</button>
         {% endif %}
       </td>
     </tr>
@@ -80,9 +79,8 @@
   <div class="card-body">
     <div class="empty" id="rowlist-empty" hidden>Каталог пуст.</div>
     <div class="row wrap">
-      <button class="btn primary" data-busy="Сохраняем…">Сохранить</button>
+      <button class="btn primary" data-busy="Сохраняем...">Сохранить</button>
       <button class="btn" data-add-row>{{ icon('plus') }}Должность</button>
-      <span class="hint">Поле ключ является обязательным к заполнению.</span>
     </div>
   </div>
 </div>
