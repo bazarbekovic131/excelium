@@ -584,16 +584,13 @@ class SignerStore:
         log.info("состав подписантов импортирован", extra={"data": counts})
         return counts
 
-    # --- первичное наполнение --------------------------------------------
-
-    def is_empty(self) -> bool:
-        with connect(self.db_path) as conn:
-            return conn.execute("SELECT COUNT(*) c FROM signer_rules").fetchone()["c"] == 0
+    # --- наполнение для тестов --------------------------------------------
 
     def seed(self, matrix_path: Path, template_path: Path) -> int:
-        """Разовый перенос состава из старых источников: структура — из
-        data/signers_seed.yaml, ФИО и должности — с листа СПР_ПОДПИСАНТОВ
-        шаблона. Дальше состав правится в /ui, а эти файлы не нужны.
+        """Наполнение из старых источников: структура — из YAML, ФИО и
+        должности — с листа СПР_ПОДПИСАНТОВ шаблона. Боевой состав давно
+        перенесён и живёт в базе; сюда ходят только тесты
+        (tests/data/signers_seed.yaml), чтобы работать на реальном объёме.
 
         Должность получает ключ по названию, если в старом справочнике
         её занимал один человек, иначе — с фамилией в скобках: одиннадцать
@@ -664,118 +661,3 @@ class SignerStore:
         log.info("справочник подписантов наполнен",
                  extra={"data": {"rules": count, "roles": roles, "spr_rows": len(spr)}})
         return count
-
-    # --- перенос с прежней модели -----------------------------------------
-
-    def migrate_legacy(self) -> int:
-        """Прежняя модель держала людей отдельной таблицей и знала четыре
-        способа указать подписанта. Здесь всё это сводится к должностям:
-        каждая пара «печатаемая должность + человек» становится должностью
-        шлюза, а правила и наборы переписываются на неё. Реестры печатаются
-        так же, как печатались. Старые таблицы после переноса удаляются."""
-        with connect(self.db_path) as conn:
-            tables = {r["name"] for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table'")}
-            if "signer_bindings" not in tables:
-                return 0
-            if conn.execute("SELECT COUNT(*) c FROM signer_rules").fetchone()["c"]:
-                return 0   # новые таблицы уже наполнены — старые просто лишние
-
-            def rows(table: str) -> list[dict]:
-                if table not in tables:
-                    return []
-                return [dict(r) for r in conn.execute(f"SELECT * FROM {table}")]
-
-            people = {p["id"]: p for p in rows("signer_people")}
-            legacy_positions = {p["name"]: p for p in rows("signer_positions")}
-            staff = {p["uid"]: p for p in self.staff()}
-            by_position = {}
-            for p in staff.values():
-                by_position.setdefault((p["position"], p["department"]), []).append(p)
-            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-            made: dict[tuple[str, str], str] = {}
-
-            def make_role(title: str, fio: str, uid: str = "") -> str:
-                """Ключ — должность, а если под ней уже другой человек,
-                должность с фамилией в скобках."""
-                title = title.strip()
-                fio = print_name(fio)
-                key = made.get((title, fio))
-                if key:
-                    return key
-                key = title or fio
-                taken = {k for k in made.values()}
-                if key in taken:
-                    key = f"{title} ({fio})" if fio else f"{title} (2)"
-                    n = 2
-                    while key in taken:
-                        n += 1
-                        key = f"{title} ({fio}, {n})"
-                made[(title, fio)] = key
-                conn.execute(
-                    "INSERT OR IGNORE INTO signer_roles (name, title, holder_uid,"
-                    " holder_name, updated_at) VALUES (?,?,?,?,?)",
-                    (key, title, uid, fio, now))
-                return key
-
-            def slot_to_role(person_id, ref: str, dept: str, position: str) -> str:
-                ref = str(ref or "").strip()
-                if ref.startswith("gw:"):
-                    old = legacy_positions.get(ref[3:])
-                    if old is None:
-                        return make_role(ref[3:], "")
-                    holder = staff.get(old.get("holder_uid") or "")
-                    fio = holder["fio"] if holder else people.get(
-                        old.get("holder_person_id") or 0, {}).get("fio", "")
-                    return make_role(old["name"], fio, old.get("holder_uid") or "")
-                if ref:
-                    holder = staff.get(ref)
-                    if holder is None:   # ссылка на должность Структуры
-                        candidates = by_position.get((ref, dept)) or [
-                            p for p in staff.values() if p["position"] == ref]
-                        holder = sorted(candidates, key=lambda p: p["fio"])[0] \
-                            if candidates else None
-                    if holder is None:
-                        return make_role(position or ref, "")
-                    return make_role(position or holder["position"], holder["fio"],
-                                     holder["uid"])
-                person = people.get(person_id or 0)
-                if person is None:
-                    return ""
-                return make_role(position or person.get("position", ""), person["fio"],
-                                 person.get("docv_uid") or "")
-
-            for line in rows("signer_sets"):
-                role = slot_to_role(line.get("person_id"), line.get("position_ref", ""),
-                                    line.get("dept_ref", ""), line.get("position", ""))
-                if not role:
-                    continue
-                conn.execute(
-                    "INSERT OR REPLACE INTO signer_set_lines (set_name, ord, role,"
-                    " print_company, mark, skip_expense_types) VALUES (?,?,?,?,?,?)",
-                    (line["name"], line["ord"], role, line.get("print_company", ""),
-                     line.get("mark", ""), line.get("skip_expense_types", "")))
-
-            moved = 0
-            for b in rows("signer_bindings"):
-                left = slot_to_role(b.get("soglasovano_id"), b.get("soglasovano_ref", ""),
-                                    b.get("soglasovano_dept", ""),
-                                    b.get("soglasovano_position", ""))
-                right = slot_to_role(b.get("utverzhdayu_id"), b.get("utverzhdayu_ref", ""),
-                                     b.get("utverzhdayu_dept", ""),
-                                     b.get("utverzhdayu_position", ""))
-                conn.execute(
-                    "INSERT OR REPLACE INTO signer_rules (company, company_key, object_name,"
-                    " object_key, set_name, soglasovano_role, soglasovano_company,"
-                    " utverzhdayu_role, utverzhdayu_company) VALUES (?,?,?,?,?,?,?,?,?)",
-                    (b["company"], b["company_key"], b["object_name"], b["object_key"],
-                     b["set_name"], left, b.get("soglasovano_company", ""), right,
-                     b.get("utverzhdayu_company", "")))
-                moved += 1
-
-            for table in ("signer_bindings", "signer_sets", "signer_positions",
-                          "signer_people"):
-                conn.execute(f"DROP TABLE IF EXISTS {table}")
-        log.info("подписанты перенесены на модель должностей",
-                 extra={"data": {"rules": moved, "roles": len(made)}})
-        return moved

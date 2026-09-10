@@ -1,15 +1,13 @@
 """Справочник подписантов: люди из Структуры, роли из должностей шлюза."""
 import io
 import json
-import sqlite3
-import tempfile
 from pathlib import Path
 
 import openpyxl
 
 from conftest import docv_headers
-from gateway.jobsqueue.db import connect, init_db
-from gateway.signers import SignerStore, fio_key, print_name
+from gateway.jobsqueue.db import connect
+from gateway.signers import fio_key, print_name
 
 MODEL = json.loads((Path(__file__).parent / "data" / "model.json").read_text(encoding="utf-8"))
 
@@ -52,7 +50,7 @@ def test_seed_matches_vlookup_line_for_line(client):
         if isinstance(n, int):
             spr[n] = (str(ws[f"F{r}"].value or "").strip(), str(ws[f"H{r}"].value or "").strip(),
                       str(ws[f"J{r}"].value or "").strip())
-    raw = yaml.safe_load(Path("data/signers_seed.yaml").read_text(encoding="utf-8"))
+    raw = yaml.safe_load((Path(__file__).parent / "data" / "signers_seed.yaml").read_text(encoding="utf-8"))
     rules = {}
     for rule in raw["rules"]:
         for obj in rule["objects"]:
@@ -276,61 +274,6 @@ def test_set_delete_guarded(client):
     assert "временный" in store.sets()
     store.delete_set("временный")
     assert "временный" not in store.sets()
-
-
-# --- перенос с прежней модели ---------------------------------------------
-
-def test_legacy_tables_migrate_into_roles(tmp_path):
-    """База прошлой недели: люди отдельной таблицей и четыре способа
-    указать подписанта. После переноса — только должности, и реестр
-    печатается так же."""
-    db = tmp_path / "gateway.db"
-    init_db(db)
-    with connect(db) as conn:
-        conn.executescript("""
-        CREATE TABLE signer_people (id INTEGER PRIMARY KEY, fio TEXT, fio_key TEXT,
-            position TEXT, docv_uid TEXT, updated_at TEXT);
-        CREATE TABLE signer_positions (name TEXT PRIMARY KEY, holder_uid TEXT,
-            holder_person_id INTEGER, updated_at TEXT);
-        CREATE TABLE signer_sets (name TEXT, ord INTEGER, person_id INTEGER, position TEXT,
-            position_ref TEXT, dept_ref TEXT, print_company TEXT, mark TEXT,
-            skip_expense_types TEXT);
-        CREATE TABLE signer_bindings (id INTEGER PRIMARY KEY, company TEXT, company_key TEXT,
-            object_name TEXT, object_key TEXT, set_name TEXT,
-            soglasovano_id INTEGER, soglasovano_position TEXT, soglasovano_company TEXT,
-            soglasovano_ref TEXT, soglasovano_dept TEXT,
-            utverzhdayu_id INTEGER, utverzhdayu_position TEXT, utverzhdayu_company TEXT,
-            utverzhdayu_ref TEXT, utverzhdayu_dept TEXT);
-        INSERT INTO signer_people VALUES (1,'Аманов Б.Ш.','аманов бш','Генеральный директор','',''),
-                                         (2,'Омарова Г.А.','омарова га','Главный бухгалтер','','');
-        INSERT INTO signer_positions VALUES ('Финансовый директор','u-fin',NULL,'');
-        INSERT INTO signer_sets VALUES ('list_1',0,2,'','','','','',''),
-                                       ('list_1',1,NULL,'','gw:Финансовый директор','','','',''),
-                                       ('list_1',2,NULL,'','u-str','','ТОО «Стр»','СОГЛАСОВАНО','');
-        INSERT INTO signer_bindings VALUES (1,'ТОО «Тест»','тоо тест','','','list_1',
-            NULL,'','','','', 1,'Генеральный директор','ТОО "Шар Құрылыс"','','');
-        INSERT INTO directories VALUES ('structura','u-fin','{"name":"Финансист Ф.Ф.","position":"Финансовый директор"}',''),
-                                       ('structura','u-str','{"name":"Структурный С.С.","position":"Юрист"}','');
-        """)
-    store = SignerStore(db)
-    moved = store.migrate_legacy()
-    assert moved == 1
-    with connect(db) as conn:
-        left = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    assert not {"signer_people", "signer_sets", "signer_bindings", "signer_positions"} & left
-
-    resolved = store.resolve("ТОО «Тест»")
-    assert resolved["utverzhdayu"] == {"fio": "Аманов Б.Ш.", "position": "Генеральный директор",
-                                       "company": 'ТОО "Шар Құрылыс"'}
-    assert [c["fio"] for c in resolved["coordinators"]] == \
-        ["Омарова Г.А.", "Финансист Ф.Ф.", "Структурный С.С."]
-    assert resolved["coordinators"][2]["mark"] == "СОГЛАСОВАНО"
-    assert resolved["coordinators"][2]["position"] == "Юрист"
-    roles = {r["name"]: r for r in store.roles()}
-    assert roles["Финансовый директор"]["holder_uid"] == "u-fin"
-    assert roles["Юрист"]["holder_uid"] == "u-str"
-    # повторный запуск ничего не ломает
-    assert store.migrate_legacy() == 0
 
 
 # --- выключатели ------------------------------------------------------------

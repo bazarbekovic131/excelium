@@ -30,11 +30,17 @@ def settings(tmp_path):
     )
 
 
+SEED = Path(__file__).parent / "data" / "signers_seed.yaml"
+
+
 @pytest.fixture()
 def client(settings):
     app = create_app(settings)
     with TestClient(app) as c:
         c.settings = settings
+        # боевой состав подписантов живёт в базе на сервере; тесты
+        # получают такой же объём из своей копии старого справочника
+        c.app.state.signers.seed(SEED, c.app.state.template_inner)
         yield c
 
 
