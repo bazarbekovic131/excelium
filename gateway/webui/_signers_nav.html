@@ -1,4 +1,3 @@
-{# Вкладки раздела «Подписанты» и общий выбор должности #}
 {% macro nav(tab) -%}
 <div class="subnav">
   <a href="/ui/signers" class="{{ 'on' if tab == 'companies' }}">Компании</a>
@@ -7,14 +6,13 @@
 </div>
 {%- endmacro %}
 
-{# Один список выбора должности с поиском. empty — подпись первого пункта. #}
-{% macro role_picker(field, roles, selected, empty='— не печатать —') -%}
+{% macro role_picker(field, roles, selected, empty='Не печатать') -%}
 <div class="combo">
-  <input type="text" data-filter-for="{{ field }}" placeholder="поиск: должность или фамилия">
+  <input type="text" data-filter-for="{{ field }}" placeholder="Поиск">
   <select name="{{ field }}">
     <option value="">{{ empty }}</option>
     {% for r in roles %}
-    <option value="{{ r.name }}" {{ 'selected' if r.name == selected }}>{{ r.name }} → {{ r.holder or 'никто не назначен' }}{% if r.title != r.name %} · печатается «{{ r.title }}»{% endif %}</option>
+    <option value="{{ r.name }}" {{ 'selected' if r.name == selected }}>{{ r.name }} ({{ r.title or 'Пусто' }})</option>
     {% endfor %}
   </select>
 </div>

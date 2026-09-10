@@ -4,7 +4,7 @@
 <div class="page-head">
   <div>
     <h1>Очередь заданий</h1>
-    <span class="sub">Doc-V забирает задания опросом каждые 30 секунд</span>
+    <span class="sub">Doc-V забирает задания через документ "Шлюз" каждые 30 секунд</span>
   </div>
   <div class="head-actions">
     <a class="btn" href="/ui/jobs">{{ icon('refresh') }}Обновить</a>
@@ -36,11 +36,17 @@
 <div class="card">
   {% if rows %}
   <table>
-    <thead><tr>
-      <th class="w-60">№</th><th class="w-120">Продюсер</th><th>Тип и содержимое</th>
-      <th class="w-120">Статус</th><th class="num w-80">Попыток</th>
-      <th class="w-150">Создано</th><th class="w-150">Аренда до</th><th></th>
-    </tr></thead>
+    <thead>
+      <tr>
+        <th class="w-60">№</th><th class="w-120">Продюсер</th>
+        <th>Тип и содержимое</th>
+        <th class="w-120">Статус</th>
+        <th class="num w-80">Попыток</th>
+        <th class="w-150">Создано</th>
+        <th class="w-150">Аренда до</th>
+        <th></th>
+      </tr>
+    </thead>
     <tbody>
     {% for j in rows %}
     <tr>
@@ -60,8 +66,8 @@
       <td><div class="actions">
         {% if j.status != 'acked' %}
         <form class="inline" method="post" action="/ui/jobs/ack/{{ j.id }}"
-              onsubmit="return confirm('Подтвердить задание №{{ j.id }}? Doc-V больше его не получит.')">
-          <button class="btn sm" data-busy="…">{{ icon('check') }}подтвердить</button></form>
+              onsubmit="return confirm('Подтвердить задание №{{ j.id }}? Действие уберет работу из очереди.')">
+          <button class="btn sm" data-busy="...">{{ icon('check') }}подтвердить</button></form>
         {% endif %}
       </div></td>
     </tr>
@@ -74,23 +80,23 @@
   </div>
   {% endif %}
   {% else %}
-  <div class="empty">{% if search or status_filter or producer %}Ничего не нашлось — снимите фильтры.{% else %}Заданий нет: продюсеры кладут их через <span class="mono">POST /jobs</span>, а Doc-V забирает опросом.{% endif %}</div>
+  <div class="empty">{% if search or status_filter or producer %}Нет работ по заданному фильтру.{% else %}Заданий нет.{% endif %}</div>
   {% endif %}
 </div>
 
 <div class="card" id="new">
   <div class="card-head">
     <span class="card-title">Тестовое задание</span>
-    <span class="card-note">попадёт в очередь от продюсера «ui» — Doc-V заберёт его следующим опросом</span>
+    <span class="card-note">Попадёт в очередь работы от имени продюсера "ui"</span>
   </div>
   <div class="card-body">
     <form method="post" action="/ui/jobs/new">
       <label>Тип задания</label>
       <input type="text" name="type" value="тест" class="maxw-md">
-      <label>Payload (JSON) <span class="hint">Ctrl+Enter отправляет</span></label>
-      <textarea name="payload" rows="4">{"пример": true}</textarea>
+      <label>Payload (JSON)</label>
+      <textarea name="payload" rows="4">{"example": true}</textarea>
       <div class="form-actions">
-        <button class="btn primary" data-busy="Ставим в очередь…">Поставить в очередь</button>
+        <button class="btn primary" data-busy="Ставим в очередь...">Поставить в очередь</button>
       </div>
     </form>
   </div>

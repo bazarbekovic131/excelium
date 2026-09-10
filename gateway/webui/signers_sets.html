@@ -5,7 +5,7 @@
 <div class="page-head">
   <div>
     <h1>Наборы согласующих</h1>
-    <span class="sub">подписи под таблицей реестра, по порядку · {{ sets|length }} наборов</span>
+    <span class="sub">Сортированный список подписантов для связки "Компания" и "Объект" (опционально). Создано {{ sets|length }} наборов</span>
   </div>
   <div class="head-actions">
     <form method="post" action="/ui/signers/sets/new" class="row">
@@ -30,7 +30,7 @@
     <div class="card-body">
       {% for line in lines %}
       <div class="pair"><span class="pair-key">{{ loop.index }}.</span>
-        <span>{{ line.holder or '—' }}<span class="hint"> · {{ line.title }}{% if line.print_company %} {{ line.print_company }}{% endif %}</span></span></div>
+        <span>{{ line.holder or '—' }}<span class="hint"> {{ line.title }}{% if line.print_company %} {{ line.print_company }}{% endif %}</span></span></div>
       {% else %}
       <div class="hint">Пусто</div>
       {% endfor %}

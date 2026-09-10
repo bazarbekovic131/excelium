@@ -4,10 +4,10 @@
 <div class="page-head">
   <div>
     <h1>Операции</h1>
-    <span class="sub">каталог из ops.yaml — фиксированные команды без shell, параметры по regex</span>
+    <span class="sub">Каталог из ops.yaml с фиксированными командами.</span>
   </div>
   <div class="head-actions">
-    <span class="count">операций: {{ ops|length }}</span>
+    <span class="count">Операций: {{ ops|length }}</span>
     <a class="btn primary" href="/ui/opsedit/new">{{ icon('plus') }}Новая операция</a>
   </div>
 </div>
@@ -18,7 +18,7 @@
     <span class="card-title">Результат: {{ result.op }}</span>
     <span class="row">
       <span class="badge {{ 'success' if result.ok else 'danger' }}">{{ 'успешно' if result.ok else 'ошибка' }}</span>
-      <span class="card-note">код выхода {{ result.exit_code }} · {{ result.duration_ms }} мс</span>
+      <span class="card-note">Код выхода {{ result.exit_code }}, отклик: {{ result.duration_ms }} мс</span>
     </span>
   </div>
   <div class="card-body stack tight">
@@ -26,7 +26,7 @@
     <div class="row wrap">
       {% for f in result.files %}
       <a class="btn" href="{{ f.download_url }}" target="_blank">{{ icon('download') }}{{ f.name }}</a>
-      <a class="btn ghost" data-copy="{{ f.download_url }}" href="#">{{ icon('copy') }}<span data-label>копировать ссылку</span></a>
+      <a class="btn ghost" data-copy="{{ f.download_url }}" href="#">{{ icon('copy') }}<span data-label>Копировать</span></a>
       {% endfor %}
     </div>
     {% endif %}
@@ -43,8 +43,8 @@
   <div class="card-head">
     <span class="card-title">{{ name }}</span>
     <span class="row">
-      <span class="card-note">таймаут {{ op.timeout_sec }} с</span>
-      <a class="btn ghost sm" href="/ui/opsedit/{{ name }}">{{ icon('pencil') }}правка</a>
+      <span class="card-note">time-out: {{ op.timeout_sec }} с</span>
+      <a class="btn ghost sm" href="/ui/opsedit/{{ name }}">{{ icon('pencil') }}Правка</a>
     </span>
   </div>
   <div class="card-body">
@@ -55,20 +55,20 @@
           <label>{{ pname }} <span class="hint mono">{{ p.pattern.pattern }}</span></label>
           <input type="text" name="{{ pname }}">
         {% elif p.type == 'file' %}
-          <label>{{ pname }} <span class="hint">файл из хранилища</span></label>
+          <label>{{ pname }} <span class="hint">Файл</span></label>
           <select name="{{ pname }}">
-            <option value="">—</option>
+            <option value=""></option>
             {% for f in files %}<option value="{{ f.token }}">{{ f.orig_name }}</option>{% endfor %}
           </select>
         {% else %}
-          <label>{{ pname }} <span class="hint">до {{ p.max_items }} файлов, Cmd/Ctrl-клик</span></label>
+          <label>{{ pname }} <span class="hint">до {{ p.max_items }} файлов</span></label>
           <select name="{{ pname }}" multiple size="4" style="height:auto">
             {% for f in files %}<option value="{{ f.token }}">{{ f.orig_name }}</option>{% endfor %}
           </select>
         {% endif %}
       {% endfor %}
       <div class="form-actions">
-        <button class="btn primary" data-busy="Выполняется…">{{ icon('play') }}Запустить</button>
+        <button class="btn primary" data-busy="Выполняется...">{{ icon('play') }}Запустить</button>
       </div>
     </form>
   </div>

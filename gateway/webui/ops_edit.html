@@ -4,7 +4,7 @@
 <div class="page-head">
   <div>
     <h1>{{ name or "Новая операция" }}</h1>
-    <span class="sub"><a href="/ui/ops">Операции</a> · правится без перезапуска юнита</span>
+    <span class="sub"><a href="/ui/ops">Операции</a></span>
   </div>
   {% if name %}
   <div class="head-actions">
@@ -20,7 +20,7 @@
 <div class="grid-2">
   <div class="card">
     <div class="card-head"><span class="card-title">Команда</span>
-      <span class="card-note">shell не используется — каждый аргумент отдельной строкой</span></div>
+    </div>
     <div class="card-body">
       <div class="grid-name-timeout">
         <div>
@@ -28,14 +28,14 @@
           <input type="text" name="new_name" value="{{ name }}" required>
         </div>
         <div>
-          <label>Таймаут, с</label>
+          <label>Time-out, с</label>
           <input type="text" name="timeout_sec" value="{{ op.timeout_sec if op else 30 }}">
         </div>
       </div>
       <label>Описание</label>
       <input type="text" name="description" value="{{ op.description if op else '' }}">
 
-      <label>Аргументы (argv)</label>
+      <label>Аргументы</label>
       <div id="argv" class="stack tight">
         {% for a in (op.argv if op else ['/usr/bin/', '{workdir}']) %}
         <input type="text" name="argv" value="{{ a }}" class="mono">
@@ -43,16 +43,16 @@
       </div>
       <button type="button" class="btn sm mt-2" onclick="addArg()">{{ icon('plus') }}аргумент</button>
       <div class="card-note mt-3">
-        Первый аргумент — <span class="mono">{python}</span>, <span class="mono">{app_dir}/…</span>
+        Первый аргумент — <span class="mono">{python}</span>, <span class="mono">{app_dir}/...</span>
         либо путь в /usr/bin, /bin, /usr/local/bin, /opt.
-        Плейсхолдеры: <span class="mono">{workdir}</span> — временная папка запуска,
+        Плейсхолдер: <span class="mono">{workdir}</span> — временная папка запуска,
         <span class="mono">{app_dir}</span> — корень сервиса,
-        <span class="mono">{python}</span> — интерпретатор из venv;
-        параметр подставляется <b>только отдельным аргументом</b>
+        <span class="mono">{python}</span> — интерпретатор виртуальной среды;
+        параметр подставляется <b>отдельным аргументом</b>
         (<span class="mono">{имя}</span>, для списка файлов <span class="mono">{имя...}</span>).
       </div>
 
-      <label>Собирать результаты (glob)</label>
+      <label>Собирать результаты</label>
       <input type="text" name="collect" value="{{ op.collect if op and op.collect else '' }}"
              placeholder="*.pdf" class="mono maxw-sm">
     </div>
@@ -60,7 +60,7 @@
 
   <div class="card">
     <div class="card-head"><span class="card-title">Параметры</span>
-      <span class="card-note">значения проверяются до запуска</span></div>
+      <span class="card-note">Обратите внимания, что значения проверяются до запуска операции.</span></div>
     <div class="card-body">
       <div id="params" class="stack">
         {% for p in (params if params else []) %}
@@ -76,21 +76,19 @@
           <input type="text" name="p_pattern" value="{{ p.pattern }}" class="mono"
                  placeholder="^[-\w\s]{1,100}$">
           <label class="check">
-            <input type="checkbox" name="p_required" {{ 'checked' if p.required }}> обязательный
+            <input type="checkbox" name="p_required" {{ 'checked' if p.required }}> Обязательный
           </label>
         </div>
         {% endfor %}
       </div>
-      <button type="button" class="btn sm mt-2" onclick="addParam()">{{ icon('plus') }}параметр</button>
+      <button type="button" class="btn sm mt-2" onclick="addParam()">{{ icon('plus') }}Параметр</button>
       <div class="card-note mt-3">
-        Для строкового параметра образец обязателен: он и не пускает в команду
-        ничего лишнего. Файловые параметры принимают токен из хранилища.
+        Для строкового параметра образец обязателен: он и не пускает в команду неавторизованные аргументы.
       </div>
     </div>
   </div>
 </div>
 
-<div class="notice mt-4">Операция станет доступна сразу после сохранения — ops.yaml перезаписывается, реестр перечитывается на лету, перезапуск юнита не нужен.</div>
 <div class="form-actions end">
   <a class="btn" href="/ui/ops">Отмена</a>
   <button class="btn primary">Сохранить</button>

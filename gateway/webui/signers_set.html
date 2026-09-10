@@ -5,11 +5,11 @@
 <div class="page-head">
   <div>
     <h1>Набор {{ name }}</h1>
-    <span class="sub">подписи под таблицей реестра, сверху вниз · используют {{ used }} правил</span>
+    <span class="sub">Подписанты под таблицей платежей, в упорядоченном порядке. Используется в {{ used }} правилах</span>
   </div>
   <div class="head-actions">
     <a class="btn" href="/ui/signers/sets">{{ icon('arrow-left') }}Ко всем наборам</a>
-    <button class="btn primary" data-add-row form="setform">{{ icon('plus') }}Добавить подпись</button>
+    <button class="btn primary" data-add-row form="setform">{{ icon('plus') }}Добавить подписанта</button>
   </div>
 </div>
 
@@ -18,21 +18,20 @@
 <form method="post" action="/ui/signers/set/{{ name|urlencode }}/save" id="setform">
 <div class="card">
   <div class="card-head">
-    <span class="card-title">Состав</span>
-    <span class="card-note">строки добавляются и убираются сразу, сохранение одно на всё</span>
+    <span class="card-title">Таблица</span>
   </div>
   <table id="rowlist">
     <thead><tr>
       <th class="w-40">№</th><th class="w-360">Должность</th>
-      <th>Компания в подписи</th><th class="w-150">Заголовок над подписью</th>
-      <th class="w-180">Пропустить при затратах</th>
+      <th>Компания сотрудника</th><th class="w-150">Заголовок над подписантом</th>
+      <th class="w-180">Пропустить при перечисленных затратах</th>
       <th class="w-100"></th>
     </tr></thead>
     <tbody>
     {% for row in rows %}
     <tr>
       <td class="muted" data-num>{{ loop.index }}</td>
-      <td>{{ role_picker('role', roles, row.role, empty='— убрать строку —') }}
+      <td>{{ role_picker('role', roles, row.role, empty='Убрать строку') }}
         {% if row.missing %}<span class="badge danger">должности «{{ row.role }}» больше нет</span>{% endif %}</td>
       <td><input type="text" name="print_company" value="{{ row.print_company }}"></td>
       <td><input type="text" name="mark" value="{{ row.mark }}"></td>
@@ -47,11 +46,11 @@
     </tbody>
   </table>
   <div class="card-body">
-    <div class="empty" id="rowlist-empty" hidden>Подписей нет. Добавьте первую.</div>
+    <div class="empty" id="rowlist-empty" hidden>Подписантов нет. Добавьте первую.</div>
     <div class="row wrap">
       <button class="btn primary" data-busy="Сохраняем…">Сохранить набор</button>
-      <button class="btn" data-add-row>{{ icon('plus') }}Добавить подпись</button>
-      <span class="hint">Порядок строк — порядок подписей в реестре. Виды затрат — через запятую.</span>
+      <button class="btn" data-add-row>{{ icon('plus') }}Добавить подписанта</button>
+      <span class="hint">Виды затрат добавляются через запятую.</span>
     </div>
   </div>
 </div>
@@ -67,7 +66,7 @@
 <template id="row-template">
   <tr>
     <td class="muted" data-num></td>
-    <td>{{ role_picker('role', roles, '', empty='— выберите должность —') }}</td>
+    <td>{{ role_picker('role', roles, '', empty='Выберите должность') }}</td>
     <td><input type="text" name="print_company"></td>
     <td><input type="text" name="mark"></td>
     <td><input type="text" name="skip_expense_types"></td>

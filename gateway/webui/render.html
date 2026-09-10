@@ -3,8 +3,8 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Рендер</h1>
-    <span class="sub">собрать документ из JSON — тем же путём, каким это делает Doc-V</span>
+    <h1>Генерация</h1>
+    <span class="sub">собрать документ из JSON.</span>
   </div>
   {% if link %}<div class="head-actions">
     <a class="btn primary" href="{{ link }}" target="_blank">{{ icon('external') }}Открыть {{ link_name }}</a>
@@ -37,7 +37,7 @@
 
   <div class="card">
     <div class="card-head">
-      <span class="card-title">Typst → PDF</span>
+      <span class="card-title">Typst -> PDF</span>
       {% if not typst %}<span class="badge warn">typst не найден</span>{% endif %}
     </div>
     <div class="card-body">
@@ -47,13 +47,13 @@
         <select name="template">
           {% for t in typst_templates %}<option>{{ t }}</option>{% endfor %}
         </select>
-        <label>Данные (JSON) <span class="hint">Ctrl+Enter отправляет</span></label>
+        <label>JSON с данными.</label>
         <textarea name="data" rows="10">{{ typst_data }}</textarea>
         <div class="form-actions">
-          <button class="btn primary" data-busy="Собираем PDF…" {{ 'disabled' if not typst }}>{{ icon('play') }}Собрать PDF</button>
+          <button class="btn primary" data-busy="Собираем PDF..." {{ 'disabled' if not typst }}>{{ icon('play') }}Создать PDF</button>
+        </form>
         </div>
-      </form>
-      {% else %}<div class="muted">Шаблонов нет — создайте на странице «Шаблоны».</div>{% endif %}
+      {% else %}<div class="muted">Шаблонов нет — создайте первый на странице «Шаблоны».</div>{% endif %}
     </div>
   </div>
 </div>

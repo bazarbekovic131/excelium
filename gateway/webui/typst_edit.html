@@ -4,7 +4,7 @@
 <div class="page-head">
   <div>
     <h1>{{ name }}</h1>
-    <span class="sub"><a href="/ui/typst">Шаблоны</a> · <span class="mono">POST /render/typst/{{ name }}</span></span>
+    <span class="sub"><a href="/ui/typst">Шаблоны</a> (отображение <span class="mono">POST /render/typst/{{ name }}</span>)</span>
   </div>
   <div class="head-actions">
     {% if link %}<a class="btn primary" href="{{ link }}" target="_blank">{{ icon('external') }}Открыть PDF</a>{% endif %}
@@ -17,14 +17,13 @@
 <div class="card">
   <div class="card-head">
     <span class="card-title">Текст шаблона</span>
-    <span class="card-note">прежняя версия уходит в историю, хранится {{ history_keep }}</span>
+    <span class="card-note">Прежняя версия сохраняется историю, из которой можно её восстановить. {{ history_keep }}</span>
   </div>
   <div class="card-body">
     <form method="post" action="/ui/typst/{{ name }}/save" data-hotkey-save>
       <textarea name="source" rows="24" spellcheck="false">{{ source }}</textarea>
       <div class="form-actions">
-        <button class="btn primary" data-busy="Сохраняем…">{{ icon('save') }}Сохранить</button>
-        <span class="hint">Ctrl+S сохраняет, не выходя из редактора</span>
+        <button class="btn primary" data-busy="Сохраняем...">{{ icon('save') }}Сохранить</button>
       </div>
     </form>
   </div>
@@ -33,15 +32,14 @@
 <div class="grid-2">
   <div class="card">
     <div class="card-head">
-      <span class="card-title">Пробный рендер</span>
+      <span class="card-title">Предпросмотр</span>
       {% if not typst %}<span class="badge warn">typst не найден</span>{% endif %}
     </div>
     <div class="card-body">
       <form method="post" action="/ui/typst/{{ name }}/test">
         <textarea name="data" rows="8">{{ test_data }}</textarea>
         <div class="form-actions">
-          <button class="btn primary" data-busy="Собираем PDF…" {{ 'disabled' if not typst }}>{{ icon('play') }}Собрать PDF</button>
-          <span class="hint">Ctrl+Enter — тоже сборка</span>
+          <button class="btn primary" data-busy="Собираем PDF..." {{ 'disabled' if not typst }}>{{ icon('play') }}Собрать PDF</button>
         </div>
       </form>
       {% if error %}<pre class="out mt-3">{{ error }}</pre>{% endif %}
@@ -50,7 +48,7 @@
 
   <div class="stack">
     <div class="card">
-      <div class="card-head"><span class="card-title">Доступные картинки</span></div>
+      <div class="card-head"><span class="card-title">Доступные изображения:</span></div>
       {% if assets %}
       <table>
         <tbody>
@@ -62,7 +60,7 @@
         {% endfor %}
         </tbody>
       </table>
-      {% else %}<div class="empty">Картинок нет — загрузите на странице «Шаблоны».</div>{% endif %}
+      {% else %}<div class="empty">Картинок нет — загрузить можно на странице «Шаблоны».</div>{% endif %}
     </div>
 
     <div class="card">

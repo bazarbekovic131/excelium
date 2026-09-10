@@ -4,12 +4,13 @@
 <div class="page-head">
   <div>
     <h1>Хранилище файлов</h1>
-    <span class="sub">файлы живут {{ ttl_hours }} часов, ссылки выдаются по токену · всего {{ total }}</span>
+    <span class="sub">файлы хранятся в течение {{ ttl_hours }} часов. {{ total }}</span>
+    <span class="sub"> {{ total }} файлов. </span>
   </div>
   <div class="head-actions">
     <form method="post" action="/ui/files/upload" enctype="multipart/form-data" class="row">
       <input type="file" name="uploads" multiple class="w-300">
-      <button class="btn primary" data-busy="Загружаем…">{{ icon('upload') }}Загрузить</button>
+      <button class="btn primary" data-busy="Загружаем...">{{ icon('upload') }}Загрузить</button>
     </form>
   </div>
 </div>
@@ -28,7 +29,7 @@
     <thead><tr>
       <th class="w-check"><input type="checkbox" id="checkall" title="Выбрать все"></th>
       <th class="w-100"></th>
-      <th>Имя <span class="hint">(правится на месте)</span></th>
+      <th>Имя</th>
       <th class="num w-100">Размер</th><th class="w-180">Создан</th><th></th>
     </tr></thead>
     <tbody>
@@ -39,9 +40,9 @@
       <td>
         <form class="inline row" method="post" action="/ui/files/rename/{{ f.token }}">
           <input type="text" name="new_name" value="{{ f.orig_name }}" class="maxw-md">
-          <button class="btn icon sm" title="Переименовать" aria-label="Переименовать" data-busy="…">{{ icon('check') }}</button>
+          <button class="btn icon sm" title="Переименовать" aria-label="Переименовать" data-busy="...">{{ icon('check') }}</button>
         </form>
-        <a class="btn ghost sm mt-1" href="#" data-copy="{{ base_url }}/files/{{ f.token }}">{{ icon('copy') }}<span data-label>копировать ссылку</span></a>
+        <a class="btn ghost sm mt-1" href="#" data-copy="{{ base_url }}/files/{{ f.token }}">{{ icon('copy') }}<span data-label>Копировать</span></a>
       </td>
       <td class="num mono">{{ "%.1f"|format(f.size / 1024) }} КБ</td>
       <td>{{ f.created_at|dt }}<div class="hint">{{ f.created_at|ago }}</div></td>
@@ -66,7 +67,7 @@
     {% endif %}
   </div>
   {% else %}
-  <div class="empty">{% if search %}Ничего не нашлось — снимите фильтр.{% else %}Хранилище пусто. Сюда попадают собранные реестры и PDF, а также всё, что вы загрузите сами.{% endif %}</div>
+  <div class="empty">{% if search %}Нет результатов.{% else %}Хранилище пусто.{% endif %}</div>
   {% endif %}
 </div>
 {% endblock %}

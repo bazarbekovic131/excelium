@@ -5,7 +5,7 @@
 <div class="page-head">
   <div>
     <h1>{{ company }}</h1>
-    <span class="sub">{{ rules|length }} правил · утверждающий у компании один на все объекты</span>
+    <span class="sub">{{ rules|length }} правил.</span>
   </div>
   <div class="head-actions">
     <a class="btn" href="/ui/signers">{{ icon('arrow-left') }}Ко всем компаниям</a>
@@ -17,13 +17,12 @@
 
 <div class="card">
   <div class="card-head">
-    <span class="card-title">Проставить во все правила компании</span>
-    <span class="card-note">меняются только отмеченные поля, остальные остаются как есть</span>
+    <span class="card-title">Проставить во все правила по компании</span>
   </div>
   <div class="card-body">
     <form method="post" action="/ui/signers/company/apply">
       <input type="hidden" name="company" value="{{ company }}">
-      {% for role, title in (('utverzhdayu', 'УТВЕРЖДАЮ — справа сверху'), ('soglasovano', 'СОГЛАСОВАНО — слева сверху')) %}
+      {% for role, title in (('utverzhdayu', 'УТВЕРЖДАЮ — правый титул'), ('soglasovano', 'СОГЛАСОВАНО — левый титул')) %}
       <div class="{{ 'field-group' if not loop.first }}">
         <label class="check">
           <input type="checkbox" name="apply_{{ role }}" value="1">
@@ -31,7 +30,7 @@
         </label>
         <div class="grid-half mt-2">
           {{ role_picker(role ~ '_role', roles, base[role ~ '_role']) }}
-          <input type="text" name="{{ role }}_company" placeholder="компания в подписи"
+          <input type="text" name="{{ role }}_company" placeholder="Компания подписанта"
                  value="{{ base[role ~ '_company'] or company }}">
         </div>
       </div>
@@ -49,7 +48,6 @@
       </div>
       <div class="form-actions">
         <button class="btn primary" data-busy="Применяем…">Применить ко всем {{ rules|length }}</button>
-        <span class="hint">Ничего не отмечено — ничего и не изменится.</span>
       </div>
     </form>
   </div>
@@ -58,7 +56,6 @@
 <div class="card">
   <div class="card-head">
     <span class="card-title">Правила компании</span>
-    <span class="card-note">пустой объект — правило на всю компанию; объект без своего подписанта берёт его оттуда</span>
   </div>
   <table>
     <thead><tr>
@@ -68,11 +65,11 @@
     <tbody>
     {% for b in rules %}
     <tr>
-      <td>{{ b.object_name or "— вся компания" }}</td>
-      <td>{% if b.left %}<b>{{ b.left.fio }}</b><br><span class="hint">{{ b.left.position }}</span>{% else %}—{% endif %}</td>
-      <td>{% if b.right %}<b>{{ b.right.fio }}</b><br><span class="hint">{{ b.right.position }}</span>{% else %}—{% endif %}</td>
+      <td>{{ b.object_name or "Правило по умолчанию" }}</td>
+      <td>{% if b.left %}<b>{{ b.left.fio }}</b><br><span class="hint">{{ b.left.position }}</span>{% else %}{% endif %}</td>
+      <td>{% if b.right %}<b>{{ b.right.fio }}</b><br><span class="hint">{{ b.right.position }}</span>{% else %}{% endif %}</td>
       <td><a href="/ui/signers/set/{{ b.set_name|urlencode }}">{{ b.set_name }}</a></td>
-      <td><a class="btn ghost sm" href="/ui/signers/rule/{{ b.id }}">{{ icon('pencil') }}правка</a></td>
+      <td><a class="btn ghost sm" href="/ui/signers/rule/{{ b.id }}">{{ icon('pencil') }}Правка</a></td>
     </tr>
     {% endfor %}
     </tbody>

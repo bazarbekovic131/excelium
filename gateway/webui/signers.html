@@ -5,11 +5,11 @@
 <div class="page-head">
   <div>
     <h1>Подписанты</h1>
-    <span class="sub">кто подписывает реестры — люди из Структуры Doc-V, роли из должностей шлюза</span>
+    <span class="sub">Подписывающие сотрудники из структуры электронного документооборота "Doc-V", выбранные в должностных единицах шлюза.</span>
   </div>
   <div class="head-actions">
-    <span class="count">компаний: {{ cards|length }}</span>
-    <span class="count">правил: {{ stats.rules }}</span>
+    <span class="count">Компаний: {{ cards|length }}</span>
+    <span class="count">Правил: {{ stats.rules }}</span>
     {% if stats.vacant %}<a class="badge warn" href="/ui/signers/roles">вакантных должностей: {{ stats.vacant }}</a>{% endif %}
     <a class="btn primary" href="/ui/signers/rule/new">{{ icon('plus') }}Правило</a>
   </div>

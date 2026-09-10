@@ -17,8 +17,8 @@
   <div class="card-body">
     <div class="wordmark">{{ icon('logo') }}Doc-V Gateway</div>
     <h1>Вход в панель</h1>
-    <p>Доступ по админ-токену из <span class="mono">.env</span> сервиса.</p>
-    <input type="password" name="token" placeholder="Админ-токен" autofocus>
+    <p>Доступ по токену из конфигурационного файлы .env программы.</p>
+    <input type="password" name="token" placeholder="admin-token" autofocus>
     <button class="btn primary">Войти</button>
     {% if error %}<div class="notice err">{{ icon('alert') }}<span>{{ error }}</span></div>{% endif %}
   </div>

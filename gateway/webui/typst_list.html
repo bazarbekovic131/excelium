@@ -4,12 +4,12 @@
 <div class="page-head">
   <div>
     <h1>Шаблоны Typst</h1>
-    <span class="sub">каждый шаблон — адрес <span class="mono">POST /render/typst/&lt;имя&gt;</span></span>
+    <span class="sub">Название шаблона используется как адрес шлюза <span class="mono">POST /render/typst/&lt;имя&gt;</span></span>
   </div>
   <div class="head-actions">
     <form method="post" action="/ui/typst/create" class="row">
-      <input type="text" name="name" placeholder="имя нового шаблона" class="w-220">
-      <button class="btn primary" data-busy="Создаём…">{{ icon('plus') }}Создать</button>
+      <input type="text" name="name" placeholder="Имя нового шаблона" class="w-220">
+      <button class="btn primary" data-busy="Создаём...">{{ icon('plus') }}Создать</button>
     </form>
   </div>
 </div>
@@ -18,7 +18,7 @@
   <div class="card">
     <div class="card-head">
       <span class="card-title">Шаблоны</span>
-      <span class="card-note">данные приходят JSON-ом и читаются как <span class="mono">json(sys.inputs.data)</span></span>
+      <span class="card-note">Удостоверьтесь, что данные отправляются в формате JSON. Используйте <span class="mono">json(sys.inputs.data)</span> для чтения словаря.</span>
     </div>
     {% if rows %}
     <table>
@@ -52,7 +52,7 @@
         <td class="num mono">{{ "%.1f"|format(a.size / 1024) }} КБ</td>
         <td><div class="actions">
           <form class="inline" method="post" action="/ui/typst/assets/delete/{{ a.name }}"
-                onsubmit="return confirm('Удалить картинку {{ a.name }}? Шаблоны, где она подключена, перестанут собираться.')">
+                onsubmit="return confirm('Удалить картинку {{ a.name }}?')">
             <button class="btn danger icon sm" title="Удалить" aria-label="Удалить" data-busy="…">{{ icon('trash') }}</button></form>
         </div></td>
       </tr>
@@ -63,11 +63,10 @@
     <div class="card-body">
       <form method="post" action="/ui/typst/assets/upload" enctype="multipart/form-data" class="row">
         <input type="file" name="uploads" multiple accept=".png,.jpg,.jpeg,.gif,.svg">
-        <button class="btn" data-busy="Загружаем…">{{ icon('upload') }}Загрузить</button>
+        <button class="btn" data-busy="Загружаем...">{{ icon('upload') }}Загрузить</button>
       </form>
-      <div class="card-note mt-3">В шаблоне подключаются как
-        <span class="mono">#image("assets/имя.png")</span>; фирменные бланки — через
-        <span class="mono">organization.blank_filepath</span>.</div>
+      <div class="card-note mt-3">В шаблоне используйте код
+        <span class="mono">#image("assets/имя.png")</span>.</div>
     </div>
   </div>
 </div>

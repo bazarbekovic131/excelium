@@ -4,9 +4,9 @@
 <div class="page-head">
   <div>
     <h1>API-консоль</h1>
-    <span class="sub">вызов точек шлюза с реальными токенами — так же, как это делают Doc-V и продюсеры</span>
+    <span class="sub">Вызов точек шлюза.</span>
   </div>
-  <div class="head-actions"><a class="btn" href="/docs">{{ icon('external') }}OpenAPI-схема</a></div>
+  <div class="head-actions"><a class="btn" href="/docs">{{ icon('external') }}OpenAPI</a></div>
 </div>
 
 <div class="grid-api">
@@ -26,8 +26,7 @@
 
   <div class="stack">
     <div class="card">
-      <div class="card-head"><span class="card-title">Запрос</span>
-        <span class="card-note">токен подставляется по адресу автоматически</span></div>
+      <div class="card-head"><span class="card-title">Запрос</span></div>
       <div class="card-body">
         <form method="post" action="/ui/api">
           <div class="grid-api-form">
@@ -40,11 +39,10 @@
             </select>
             <input type="text" name="path" value="{{ path }}" class="mono">
           </div>
-          <label>Тело запроса (JSON)</label>
+          <label>Тело запроса, JSON</label>
           <textarea name="body" rows="8">{{ body }}</textarea>
           <div class="form-actions">
-            <button class="btn primary" data-busy="Отправляем…">{{ icon('play') }}Отправить</button>
-            <span class="hint">Ctrl+Enter отправляет</span>
+            <button class="btn primary" data-busy="Отправляем...">{{ icon('play') }}Отправить</button>
           </div>
         </form>
       </div>
@@ -56,13 +54,13 @@
         <span class="card-title">Ответ</span>
         <span class="row">
           <span class="badge {{ result.tone }}">{{ result.status or "нет ответа" }}</span>
-          <span class="card-note">{{ result.duration_ms }} мс · {{ result.size }} байт</span>
+          <span class="card-note">Отклик: {{ result.duration_ms }} мс, размер: {{ result.size }} байт</span>
         </span>
       </div>
       <div class="card-body">
         <pre class="out">{{ result.text }}</pre>
         <div class="row mt-3" style="justify-content:space-between">
-          <label style="margin:0">Тот же запрос из терминала</label>
+          <label style="margin:0">Запрос из терминала</label>
           <a class="btn ghost sm" href="#" data-copy="{{ result.curl }}">{{ icon('copy') }}<span data-label>копировать</span></a>
         </div>
         <pre class="out mt-1">{{ result.curl }}</pre>
@@ -72,7 +70,7 @@
 
     <div class="card">
       <div class="card-head"><span class="card-title">Журнал запросов</span>
-        <span class="card-note">последние {{ log|length }} из консоли</span></div>
+        <span class="card-note">последние {{ log|length }}</span></div>
       {% for r in log %}
       <div class="list-row">
         <span class="time">{{ r.time }}</span>

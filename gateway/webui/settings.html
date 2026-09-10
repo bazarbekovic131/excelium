@@ -4,7 +4,7 @@
 <div class="page-head">
   <div>
     <h1>Настройки</h1>
-    <span class="sub">сроки и лимиты применяются на лету; токены и адреса живут в .env</span>
+    <span class="sub">Сроки и лимиты применяются автоматически</span>
   </div>
 </div>
 
@@ -29,7 +29,7 @@
 
     <div class="card">
       <div class="card-head"><span class="card-title">Сеть</span>
-        <span class="card-note">правится в .env, нужен перезапуск</span></div>
+        <span class="card-note">Правится в .env, необходим перезапуск на сервере для применения изменений</span></div>
       <div class="list-row">
         <span class="name">API — GW_ALLOWLIST</span>
         <span class="mono muted">{{ allowlist|join(', ') }}</span>
@@ -47,7 +47,7 @@
         <span class="mono muted">{{ var_dir }}</span>
       </div>
       <div class="list-row">
-        <span class="name">Typst — GW_TYPST_BIN</span>
+        <span class="name">Путь к бинарному приложению Typst — GW_TYPST_BIN</span>
         <span class="mono muted">{{ typst_bin }}</span>
       </div>
     </div>
@@ -56,23 +56,18 @@
   <div class="stack">
     <div class="card">
       <div class="card-head"><span class="card-title">Токены доступа</span>
-        <span class="card-note">значения не показываются</span></div>
+        <span class="card-note">Значения не показываются</span></div>
       {% for label, key, masked in tokens %}
       <div class="list-row">
         <span class="name">{{ label }} <span class="hint mono">({{ key }})</span></span>
-        {% if masked == 'не задан' %}<span class="badge warn">не задан</span>
+        {% if masked == 'Не задан' %}<span class="badge warn">Не задан</span>
         {% else %}<span class="mono muted">{{ masked }}</span>{% endif %}
       </div>
       {% endfor %}
-      <div class="card-body card-note">
-        Токены меняются в .env с перезапуском юнита: смена из интерфейса могла бы
-        закрыть доступ вам самим или открыть его чужим. Новый токен —
-        <span class="mono">python3 -c "import secrets; print(secrets.token_urlsafe(32))"</span>.
-      </div>
     </div>
 
     <div class="card">
-      <div class="card-head"><span class="card-title">Продюсеры очереди</span>
+      <div class="card-head"><span class="card-title">Создающие работу в очередь</span>
         <span class="card-note">GW_PRODUCER_TOKENS</span></div>
       {% for name, masked in producers %}
       <div class="list-row">
@@ -80,7 +75,7 @@
         <span class="mono muted">{{ masked }}</span>
       </div>
       {% else %}
-      <div class="empty">Продюсеров нет — задания в очередь класть некому.</div>
+      <div class="empty">Нет создающих программ.</div>
       {% endfor %}
     </div>
   </div>
