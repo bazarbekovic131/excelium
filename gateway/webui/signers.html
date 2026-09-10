@@ -8,30 +8,28 @@
     <span class="sub">кто подписывает реестры — люди из Структуры Doc-V, роли из должностей шлюза</span>
   </div>
   <div class="head-actions">
-    <span class="chip neutral">компаний: {{ cards|length }}</span>
-    <span class="chip neutral">правил: {{ stats.rules }}</span>
-    {% if stats.vacant %}<a class="chip warn" href="/ui/signers/roles">вакантных должностей: {{ stats.vacant }}</a>{% endif %}
-    <a class="btn" href="/ui/signers/rule/new">＋ Правило</a>
+    <span class="count">компаний: {{ cards|length }}</span>
+    <span class="count">правил: {{ stats.rules }}</span>
+    {% if stats.vacant %}<a class="badge warn" href="/ui/signers/roles">вакантных должностей: {{ stats.vacant }}</a>{% endif %}
+    <a class="btn primary" href="/ui/signers/rule/new">{{ icon('plus') }}Правило</a>
   </div>
 </div>
 
 {{ nav(tab) }}
-{% if flash %}<div class="flash {{ 'err' if flash_err }}">{{ flash }}</div>{% endif %}
 
 <form class="filters" method="get" action="/ui/signers" data-no-lock>
-  <input type="text" name="search" value="{{ search }}" placeholder="компания или объект"
-         style="min-width:260px">
-  <button class="btn ghost">Искать</button>
-  {% if search %}<a class="muted" style="font-size:13px" href="/ui/signers">Сбросить</a>{% endif %}
-  <span class="chip neutral" style="margin-left:auto">показано: {{ rules|length }}</span>
+  <input type="text" name="search" value="{{ search }}" placeholder="компания или объект">
+  <button class="btn">{{ icon('search') }}Искать</button>
+  {% if search %}<a class="text-sm" href="/ui/signers">Сбросить</a>{% endif %}
+  <span class="count right">показано: {{ rules|length }}</span>
 </form>
 
 <div class="company-grid">
   {% for card in cards %}
   <div class="card">
     <div class="card-head">
-      <span class="card-title" style="text-transform:none;letter-spacing:0">{{ card.company }}</span>
-      <a class="btn ghost sm" href="/ui/signers/company?name={{ card.company|urlencode }}">Открыть</a>
+      <span class="card-title">{{ card.company }}</span>
+      <a class="btn sm" href="/ui/signers/company?name={{ card.company|urlencode }}">Открыть</a>
     </div>
     <div class="card-body">
       {% if card.whole %}
@@ -45,7 +43,7 @@
       <div class="hint">Правила на всю компанию нет — только объекты.</div>
       {% endif %}
       {% if card.objects %}
-      <div class="hint" style="margin-top:8px">Объекты со своим правилом: {{ card.objects }}</div>
+      <div class="hint mt-2">Объекты со своим правилом: {{ card.objects }}</div>
       {% endif %}
     </div>
   </div>
@@ -63,7 +61,7 @@
   <table>
     <thead><tr>
       <th>Компания</th><th>Объект</th><th>Согласовано</th><th>Утверждаю</th>
-      <th style="width:110px">Набор</th><th style="width:70px"></th>
+      <th class="w-120">Набор</th><th class="w-80"></th>
     </tr></thead>
     <tbody>
     {% for b in rules %}
@@ -73,13 +71,13 @@
       <td>{% if b.left %}<b>{{ b.left.fio }}</b><br><span class="hint">{{ b.left.position }} {{ b.left.company }}</span>{% else %}—{% endif %}</td>
       <td>{% if b.right %}<b>{{ b.right.fio }}</b><br><span class="hint">{{ b.right.position }} {{ b.right.company }}</span>{% else %}—{% endif %}</td>
       <td><a href="/ui/signers/set/{{ b.set_name|urlencode }}">{{ b.set_name }}</a></td>
-      <td><a class="btn ghost sm" href="/ui/signers/rule/{{ b.id }}">правка</a></td>
+      <td><a class="btn ghost sm" href="/ui/signers/rule/{{ b.id }}">{{ icon('pencil') }}правка</a></td>
     </tr>
     {% endfor %}
     </tbody>
   </table>
   {% else %}
-  <div class="card-body"><div class="empty">Ничего не нашлось</div></div>
+  <div class="empty">Ничего не нашлось</div>
   {% endif %}
 </div>
 {% endblock %}

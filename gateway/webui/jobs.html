@@ -4,17 +4,16 @@
 <div class="page-head">
   <div>
     <h1>Очередь заданий</h1>
-    <span class="sub"><span class="dot sm live"></span> Doc-V забирает задания опросом каждые 30 секунд</span>
+    <span class="sub">Doc-V забирает задания опросом каждые 30 секунд</span>
   </div>
   <div class="head-actions">
-    <a class="btn ghost" href="/ui/jobs">Обновить</a>
-    <a class="btn" href="#new">＋ Тестовое задание</a>
+    <a class="btn" href="/ui/jobs">{{ icon('refresh') }}Обновить</a>
+    <a class="btn primary" href="#new">{{ icon('plus') }}Тестовое задание</a>
   </div>
 </div>
 
 <form class="filters" method="get" action="/ui/jobs" data-no-lock>
-  <input type="text" name="search" value="{{ search }}" placeholder="номер, тип или содержимое"
-         style="min-width:260px">
+  <input type="text" name="search" value="{{ search }}" placeholder="номер, тип или содержимое">
   <select name="status" onchange="this.form.submit()">
     <option value="">Все статусы</option>
     {% for value, title in (('pending','В очереди'), ('leased','Выданы Doc-V'), ('acked','Подтверждены')) %}
@@ -27,20 +26,20 @@
     <option value="{{ p }}" {{ 'selected' if p == producer }}>{{ p }}</option>
     {% endfor %}
   </select>
-  <button class="btn ghost">Искать</button>
+  <button class="btn">{{ icon('search') }}Искать</button>
   {% if search or status_filter or producer %}
-  <a class="muted" style="font-size:13px" href="/ui/jobs">Сбросить</a>
+  <a class="text-sm" href="/ui/jobs">Сбросить</a>
   {% endif %}
-  <span class="chip neutral" style="margin-left:auto">показано: {{ rows|length }}</span>
+  <span class="count right">показано: {{ rows|length }}</span>
 </form>
 
 <div class="card">
   {% if rows %}
   <table>
     <thead><tr>
-      <th style="width:60px">№</th><th style="width:110px">Продюсер</th><th>Тип и содержимое</th>
-      <th style="width:120px">Статус</th><th class="num" style="width:80px">Попыток</th>
-      <th style="width:150px">Создано</th><th style="width:150px">Аренда до</th><th></th>
+      <th class="w-60">№</th><th class="w-120">Продюсер</th><th>Тип и содержимое</th>
+      <th class="w-120">Статус</th><th class="num w-80">Попыток</th>
+      <th class="w-150">Создано</th><th class="w-150">Аренда до</th><th></th>
     </tr></thead>
     <tbody>
     {% for j in rows %}
@@ -49,20 +48,20 @@
       <td>{{ j.producer }}</td>
       <td>
         <div class="strong">{{ j.type }}</div>
-        <details style="margin-top:4px">
-          <summary class="muted" style="cursor:pointer;font-size:12px">payload</summary>
-          <pre class="out" style="margin-top:6px;max-height:220px">{{ j.payload }}</pre>
+        <details class="mt-1">
+          <summary class="hint" style="cursor:pointer">payload</summary>
+          <pre class="out mt-1" style="max-height:220px">{{ j.payload }}</pre>
         </details>
       </td>
-      <td><span class="chip {{ j.status }}">{{ status_titles.get(j.status, j.status) }}</span></td>
+      <td><span class="badge {{ j.status }}">{{ status_titles.get(j.status, j.status) }}</span></td>
       <td class="num">{{ j.attempts }}</td>
-      <td>{{ j.created_at|dt }}<div class="muted" style="font-size:12px">{{ j.created_at|ago }}</div></td>
+      <td>{{ j.created_at|dt }}<div class="hint">{{ j.created_at|ago }}</div></td>
       <td class="mono muted">{{ j.leased_until|dt }}</td>
       <td><div class="actions">
         {% if j.status != 'acked' %}
         <form class="inline" method="post" action="/ui/jobs/ack/{{ j.id }}"
               onsubmit="return confirm('Подтвердить задание №{{ j.id }}? Doc-V больше его не получит.')">
-          <button class="btn ghost sm" data-busy="…">подтвердить</button></form>
+          <button class="btn sm" data-busy="…">{{ icon('check') }}подтвердить</button></form>
         {% endif %}
       </div></td>
     </tr>
@@ -70,8 +69,8 @@
     </tbody>
   </table>
   {% if has_more %}
-  <div class="card-body" style="text-align:center">
-    <a class="btn ghost" href="/ui/jobs?limit={{ next_limit }}&status={{ status_filter }}&search={{ search }}&producer={{ producer }}">Показать ещё</a>
+  <div class="card-body center">
+    <a class="btn" href="/ui/jobs?limit={{ next_limit }}&status={{ status_filter }}&search={{ search }}&producer={{ producer }}">Показать ещё</a>
   </div>
   {% endif %}
   {% else %}
@@ -87,10 +86,12 @@
   <div class="card-body">
     <form method="post" action="/ui/jobs/new">
       <label>Тип задания</label>
-      <input type="text" name="type" value="тест" style="max-width:420px">
+      <input type="text" name="type" value="тест" class="maxw-md">
       <label>Payload (JSON) <span class="hint">Ctrl+Enter отправляет</span></label>
       <textarea name="payload" rows="4">{"пример": true}</textarea>
-      <button class="btn" style="margin-top:14px" data-busy="Ставим в очередь…">Поставить в очередь</button>
+      <div class="form-actions">
+        <button class="btn primary" data-busy="Ставим в очередь…">Поставить в очередь</button>
+      </div>
     </form>
   </div>
 </div>

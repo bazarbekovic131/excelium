@@ -5,11 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Doc-V Gateway{% endblock %}</title>
 <style>{{ ds_css }}</style>
+{% block head %}{% endblock %}
 </head>
 <body>
+{% include "_icons.html" %}
+{% block body %}
 <header class="gw-header">
   <div class="left">
-    <a class="wordmark" href="/ui"><span aria-hidden="true">◢</span>DOC-V GATEWAY</a>
+    <a class="wordmark" href="/ui">{{ icon('logo') }}Doc-V Gateway</a>
     <nav class="gw-nav">
       <a href="/ui" class="{{ 'active' if page == 'dash' }}">Обзор</a>
       <a href="/ui/jobs" class="{{ 'active' if page == 'jobs' }}">Задания</a>
@@ -24,18 +27,18 @@
   </div>
   <div class="right">
     {% if refreshable %}
-    <label class="online" style="margin:0;cursor:pointer;font-weight:500">
-      <input type="checkbox" id="autorefresh" style="width:auto;height:auto;box-shadow:none">
-      обновлять
+    <label class="check text-sm muted">
+      <input type="checkbox" id="autorefresh">
+      {{ icon('refresh') }}обновлять
     </label>
     {% endif %}
-    <span class="online"><span class="dot sm live"></span>онлайн</span>
+    <span class="online"><span class="dot ok"></span>онлайн</span>
     <span class="user-chip">Администратор</span>
-    <a href="/ui/logout" class="muted" style="font-size:12px">Выйти</a>
+    <a href="/ui/logout" class="muted text-sm">Выйти</a>
   </div>
 </header>
 <main>
-{% if flash %}<div class="flash {{ 'err' if flash_err }}">{{ flash }}</div>{% endif %}
+{% if flash %}<div class="notice {{ 'err' if flash_err else 'success' }}">{% if flash_err %}{{ icon('alert') }}{% endif %}<span>{{ flash }}</span></div>{% endif %}
 {% block content %}{% endblock %}
 </main>
 
@@ -55,15 +58,17 @@ document.addEventListener('submit', function (e) {
   }, 0);
 });
 
-// Копирование значений: ссылки на файлы, curl-строки, токены.
+// Копирование значений: ссылки на файлы, curl-строки, токены. Текст
+// меняется у подписи внутри кнопки, чтобы иконка рядом уцелела.
 document.addEventListener('click', function (e) {
   const el = e.target.closest('[data-copy]');
   if (!el) return;
   e.preventDefault();
   navigator.clipboard.writeText(el.dataset.copy).then(function () {
-    const was = el.textContent;
-    el.textContent = 'скопировано';
-    setTimeout(function () { el.textContent = was; }, 1200);
+    const label = el.querySelector('[data-label]') || el;
+    const was = label.textContent;
+    label.textContent = 'скопировано';
+    setTimeout(function () { label.textContent = was; }, 1200);
   });
 });
 
@@ -99,19 +104,14 @@ document.addEventListener('input', function (e) {
     || document.getElementById(box.dataset.filterFor);
   if (!select) return;
   const words = box.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  let shown = 0;
   select.querySelectorAll('option').forEach(function (o) {
     if (!o.value) { o.hidden = false; return; }   // «— не печатать —» всегда на месте
     const text = o.textContent.toLowerCase();
-    const hit = words.every(function (w) { return text.indexOf(w) >= 0; });
-    o.hidden = !hit;
-    if (hit) shown++;
+    o.hidden = !words.every(function (w) { return text.indexOf(w) >= 0; });
   });
   select.querySelectorAll('optgroup').forEach(function (g) {
     g.hidden = ![].some.call(g.querySelectorAll('option'), function (o) { return !o.hidden; });
   });
-  const counter = box.parentNode.querySelector('[data-filter-count]');
-  if (counter) counter.textContent = words.length ? shown + ' подходит' : '';
 });
 
 // Список подписей: строки добавляются, удаляются и переставляются на
@@ -180,5 +180,6 @@ document.addEventListener('input', function (e) {
   apply();
 })();
 </script>
+{% endblock %}
 </body>
 </html>

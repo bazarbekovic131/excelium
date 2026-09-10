@@ -6,50 +6,46 @@
     <h1>API-консоль</h1>
     <span class="sub">вызов точек шлюза с реальными токенами — так же, как это делают Doc-V и продюсеры</span>
   </div>
-  <div class="head-actions"><a class="btn ghost" href="/docs">OpenAPI-схема</a></div>
+  <div class="head-actions"><a class="btn" href="/docs">{{ icon('external') }}OpenAPI-схема</a></div>
 </div>
 
-<div style="display:grid;grid-template-columns:300px 1fr;gap:20px;align-items:start">
+<div class="grid-api">
   <div class="card">
     <div class="card-head"><span class="card-title">Точки API</span></div>
     {% for group, items in groups %}
-    <div style="padding:8px 16px;font:600 11px/1 var(--font-sans);letter-spacing:.04em;
-                text-transform:uppercase;color:var(--text-muted);
-                box-shadow:inset 0 1px 0 var(--slate-100)">{{ group }}</div>
+    <div class="list-group">{{ group }}</div>
     {% for m, p, b in items %}
-    <a class="feed-row" style="text-decoration:none;{{ 'background:var(--brand-surface)' if p == path }}"
+    <a class="list-row {{ 'on' if p == path }}"
        href="/ui/api?method={{ m }}&path={{ p|urlencode }}&body={{ b|urlencode }}">
-      <span class="chip {{ 'info' if m == 'GET' else 'success' }}">{{ m }}</span>
-      <span class="mono" style="flex:1;font-size:12px">{{ p.split('?')[0] }}</span>
+      <span class="tag">{{ m }}</span>
+      <span class="mono text-sm grow">{{ p.split('?')[0] }}</span>
     </a>
     {% endfor %}
     {% endfor %}
   </div>
 
-  <div style="display:flex;flex-direction:column;gap:20px">
+  <div class="stack">
     <div class="card">
       <div class="card-head"><span class="card-title">Запрос</span>
         <span class="card-note">токен подставляется по адресу автоматически</span></div>
       <div class="card-body">
         <form method="post" action="/ui/api">
-          <div style="display:grid;grid-template-columns:120px 1fr;gap:10px">
-            <div>
-              <label>Метод</label>
-              <select name="method">
-                {% for m in ('GET', 'POST') %}
-                <option {{ 'selected' if m == method }}>{{ m }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div>
-              <label>Адрес</label>
-              <input type="text" name="path" value="{{ path }}" class="mono">
-            </div>
+          <div class="grid-api-form">
+            <label>Метод</label>
+            <label>Адрес</label>
+            <select name="method">
+              {% for m in ('GET', 'POST') %}
+              <option {{ 'selected' if m == method }}>{{ m }}</option>
+              {% endfor %}
+            </select>
+            <input type="text" name="path" value="{{ path }}" class="mono">
           </div>
           <label>Тело запроса (JSON)</label>
           <textarea name="body" rows="8">{{ body }}</textarea>
-          <button class="btn" style="margin-top:14px" data-busy="Отправляем…">Отправить</button>
-          <span class="card-note" style="margin-left:12px">Ctrl+Enter отправляет</span>
+          <div class="form-actions">
+            <button class="btn primary" data-busy="Отправляем…">{{ icon('play') }}Отправить</button>
+            <span class="hint">Ctrl+Enter отправляет</span>
+          </div>
         </form>
       </div>
     </div>
@@ -58,16 +54,18 @@
     <div class="card">
       <div class="card-head">
         <span class="card-title">Ответ</span>
-        <span style="display:flex;gap:10px;align-items:center">
-          <span class="chip {{ result.tone }}">{{ result.status or "нет ответа" }}</span>
+        <span class="row">
+          <span class="badge {{ result.tone }}">{{ result.status or "нет ответа" }}</span>
           <span class="card-note">{{ result.duration_ms }} мс · {{ result.size }} байт</span>
         </span>
       </div>
       <div class="card-body">
         <pre class="out">{{ result.text }}</pre>
-        <label>Тот же запрос из терминала
-          <a class="hint" style="cursor:pointer" data-copy="{{ result.curl }}">копировать</a></label>
-        <pre class="out">{{ result.curl }}</pre>
+        <div class="row mt-3" style="justify-content:space-between">
+          <label style="margin:0">Тот же запрос из терминала</label>
+          <a class="btn ghost sm" href="#" data-copy="{{ result.curl }}">{{ icon('copy') }}<span data-label>копировать</span></a>
+        </div>
+        <pre class="out mt-1">{{ result.curl }}</pre>
       </div>
     </div>
     {% endif %}
@@ -76,12 +74,12 @@
       <div class="card-head"><span class="card-title">Журнал запросов</span>
         <span class="card-note">последние {{ log|length }} из консоли</span></div>
       {% for r in log %}
-      <div class="feed-row">
+      <div class="list-row">
         <span class="time">{{ r.time }}</span>
-        <span class="chip {{ 'info' if r.method == 'GET' else 'success' }}">{{ r.method }}</span>
-        <span class="mono" style="flex:1;font-size:12px">{{ r.path }}</span>
-        <span class="chip {{ r.tone }}">{{ r.status }}</span>
-        <span class="mono muted">{{ r.duration_ms }} мс</span>
+        <span class="tag">{{ r.method }}</span>
+        <span class="mono text-sm grow">{{ r.path }}</span>
+        <span class="badge {{ r.tone }}">{{ r.status }}</span>
+        <span class="mono muted text-sm">{{ r.duration_ms }} мс</span>
       </div>
       {% else %}
       <div class="empty">Запросов ещё не было.</div>

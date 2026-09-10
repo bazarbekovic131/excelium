@@ -10,7 +10,7 @@
   <div class="head-actions">
     <form class="inline" method="post" action="/ui/opsedit/delete/{{ name }}"
           onsubmit="return confirm('Удалить операцию {{ name }}?')">
-      <button class="btn danger">Удалить</button></form>
+      <button class="btn danger">{{ icon('trash') }}Удалить</button></form>
   </div>
   {% endif %}
 </div>
@@ -22,7 +22,7 @@
     <div class="card-head"><span class="card-title">Команда</span>
       <span class="card-note">shell не используется — каждый аргумент отдельной строкой</span></div>
     <div class="card-body">
-      <div style="display:grid;grid-template-columns:1fr 140px;gap:12px">
+      <div class="grid-name-timeout">
         <div>
           <label>Название <span class="hint">[a-z0-9_]</span></label>
           <input type="text" name="new_name" value="{{ name }}" required>
@@ -36,13 +36,13 @@
       <input type="text" name="description" value="{{ op.description if op else '' }}">
 
       <label>Аргументы (argv)</label>
-      <div id="argv">
+      <div id="argv" class="stack tight">
         {% for a in (op.argv if op else ['/usr/bin/', '{workdir}']) %}
-        <input type="text" name="argv" value="{{ a }}" class="mono" style="margin-bottom:6px">
+        <input type="text" name="argv" value="{{ a }}" class="mono">
         {% endfor %}
       </div>
-      <button type="button" class="btn ghost sm" onclick="addArg()">＋ аргумент</button>
-      <div class="card-note" style="margin-top:10px">
+      <button type="button" class="btn sm mt-2" onclick="addArg()">{{ icon('plus') }}аргумент</button>
+      <div class="card-note mt-3">
         Первый аргумент — <span class="mono">{python}</span>, <span class="mono">{app_dir}/…</span>
         либо путь в /usr/bin, /bin, /usr/local/bin, /opt.
         Плейсхолдеры: <span class="mono">{workdir}</span> — временная папка запуска,
@@ -54,7 +54,7 @@
 
       <label>Собирать результаты (glob)</label>
       <input type="text" name="collect" value="{{ op.collect if op and op.collect else '' }}"
-             placeholder="*.pdf" class="mono" style="max-width:240px">
+             placeholder="*.pdf" class="mono maxw-sm">
     </div>
   </div>
 
@@ -62,10 +62,10 @@
     <div class="card-head"><span class="card-title">Параметры</span>
       <span class="card-note">значения проверяются до запуска</span></div>
     <div class="card-body">
-      <div id="params">
+      <div id="params" class="stack">
         {% for p in (params if params else []) %}
-        <div class="param" style="margin-bottom:12px">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="param stack tight">
+          <div class="grid-half">
             <input type="text" name="p_name" value="{{ p.name }}" placeholder="имя" class="mono">
             <select name="p_type">
               {% for value, title in param_types %}
@@ -74,16 +74,15 @@
             </select>
           </div>
           <input type="text" name="p_pattern" value="{{ p.pattern }}" class="mono"
-                 placeholder="^[-\w\s]{1,100}$" style="margin-top:6px">
-          <label style="display:flex;gap:8px;align-items:center;margin:8px 0 0">
-            <input type="checkbox" name="p_required" {{ 'checked' if p.required }}
-                   style="width:auto;height:auto"> обязательный
+                 placeholder="^[-\w\s]{1,100}$">
+          <label class="check">
+            <input type="checkbox" name="p_required" {{ 'checked' if p.required }}> обязательный
           </label>
         </div>
         {% endfor %}
       </div>
-      <button type="button" class="btn ghost sm" onclick="addParam()">＋ параметр</button>
-      <div class="card-note" style="margin-top:10px">
+      <button type="button" class="btn sm mt-2" onclick="addParam()">{{ icon('plus') }}параметр</button>
+      <div class="card-note mt-3">
         Для строкового параметра образец обязателен: он и не пускает в команду
         ничего лишнего. Файловые параметры принимают токен из хранилища.
       </div>
@@ -91,44 +90,37 @@
   </div>
 </div>
 
-<div class="flash" style="margin-top:16px">Операция станет доступна сразу после сохранения — ops.yaml перезаписывается, реестр перечитывается на лету, перезапуск юнита не нужен.</div>
-<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
-  <a class="btn ghost" href="/ui/ops">Отмена</a>
-  <button class="btn">Сохранить</button>
+<div class="notice mt-4">Операция станет доступна сразу после сохранения — ops.yaml перезаписывается, реестр перечитывается на лету, перезапуск юнита не нужен.</div>
+<div class="form-actions end">
+  <a class="btn" href="/ui/ops">Отмена</a>
+  <button class="btn primary">Сохранить</button>
 </div>
 </form>
+
+<template id="param-template">
+  <div class="param stack tight">
+    <div class="grid-half">
+      <input type="text" name="p_name" placeholder="имя" class="mono">
+      <select name="p_type">{% for value, title in param_types %}<option value="{{ value }}">{{ title }}</option>{% endfor %}</select>
+    </div>
+    <input type="text" name="p_pattern" class="mono" placeholder="^[-\w\s]{1,100}$">
+    <label class="check"><input type="checkbox" name="p_required" checked> обязательный</label>
+  </div>
+</template>
 
 <script>
 function addArg() {
   const box = document.getElementById('argv');
   const i = document.createElement('input');
   i.type = 'text'; i.name = 'argv'; i.className = 'mono';
-  i.style.marginBottom = '6px';
   box.appendChild(i); i.focus();
 }
 function addParam() {
   const box = document.getElementById('params');
-  const first = box.querySelector('.param');
-  const node = first
-    ? first.cloneNode(true)
-    : null;
-  if (node) {
-    node.querySelectorAll('input').forEach(x => {
-      if (x.type === 'checkbox') { x.checked = true; } else { x.value = ''; }
-    });
-    box.appendChild(node);
-    return;
-  }
-  const html = `<div class="param" style="margin-bottom:12px">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      <input type="text" name="p_name" placeholder="имя" class="mono">
-      <select name="p_type">{% for value, title in param_types %}<option value="{{ value }}">{{ title }}</option>{% endfor %}</select>
-    </div>
-    <input type="text" name="p_pattern" class="mono" placeholder="^[-\\w\\s]{1,100}$" style="margin-top:6px">
-    <label style="display:flex;gap:8px;align-items:center;margin:8px 0 0">
-      <input type="checkbox" name="p_required" checked style="width:auto;height:auto"> обязательный</label>
-  </div>`;
-  box.insertAdjacentHTML('beforeend', html);
+  const node = document.getElementById('param-template').content.cloneNode(true);
+  box.appendChild(node);
+  const added = box.lastElementChild;
+  added.querySelector('input[name=p_name]').focus();
 }
 </script>
 {% endblock %}

@@ -9,7 +9,7 @@
 </div>
 
 <div class="grid-half">
-  <div style="display:flex;flex-direction:column;gap:20px">
+  <div class="stack">
     <div class="card">
       <div class="card-head"><span class="card-title">Сроки и лимиты</span>
         <span class="card-note">пишутся в var/settings.json</span></div>
@@ -18,10 +18,11 @@
           {% for v in values %}
           <label>{{ v.label }}, {{ v.unit }}
             <span class="hint">от {{ v.min }} до {{ v.max }}</span></label>
-          <input type="text" name="{{ v.key }}" value="{{ v.value }}" class="mono"
-                 style="max-width:220px">
+          <input type="text" name="{{ v.key }}" value="{{ v.value }}" class="mono maxw-sm">
           {% endfor %}
-          <button class="btn" style="margin-top:16px" data-busy="Применяем…">Применить</button>
+          <div class="form-actions">
+            <button class="btn primary" data-busy="Применяем…">Применить</button>
+          </div>
         </form>
       </div>
     </div>
@@ -29,37 +30,38 @@
     <div class="card">
       <div class="card-head"><span class="card-title">Сеть</span>
         <span class="card-note">правится в .env, нужен перезапуск</span></div>
-      <div class="feed-row">
+      <div class="list-row">
         <span class="name">API — GW_ALLOWLIST</span>
         <span class="mono muted">{{ allowlist|join(', ') }}</span>
       </div>
-      <div class="feed-row">
+      <div class="list-row">
         <span class="name">Интерфейс — GW_UI_ALLOWLIST</span>
         <span class="mono muted">{{ ui_allowlist|join(', ') or "—" }}</span>
       </div>
-      <div class="feed-row">
+      <div class="list-row">
         <span class="name">Адрес для ссылок — GW_BASE_URL</span>
         <span class="mono muted">{{ base_url }}</span>
       </div>
-      <div class="feed-row">
+      <div class="list-row">
         <span class="name">Каталог данных — GW_VAR_DIR</span>
         <span class="mono muted">{{ var_dir }}</span>
       </div>
-      <div class="feed-row">
+      <div class="list-row">
         <span class="name">Typst — GW_TYPST_BIN</span>
         <span class="mono muted">{{ typst_bin }}</span>
       </div>
     </div>
   </div>
 
-  <div style="display:flex;flex-direction:column;gap:20px">
+  <div class="stack">
     <div class="card">
       <div class="card-head"><span class="card-title">Токены доступа</span>
         <span class="card-note">значения не показываются</span></div>
       {% for label, key, masked in tokens %}
-      <div class="feed-row">
-        <span class="name">{{ label }} <span class="mono muted" style="font-weight:400">({{ key }})</span></span>
-        <span class="chip {{ 'neutral' if masked != 'не задан' else 'warn' }} mono">{{ masked }}</span>
+      <div class="list-row">
+        <span class="name">{{ label }} <span class="hint mono">({{ key }})</span></span>
+        {% if masked == 'не задан' %}<span class="badge warn">не задан</span>
+        {% else %}<span class="mono muted">{{ masked }}</span>{% endif %}
       </div>
       {% endfor %}
       <div class="card-body card-note">
@@ -73,9 +75,9 @@
       <div class="card-head"><span class="card-title">Продюсеры очереди</span>
         <span class="card-note">GW_PRODUCER_TOKENS</span></div>
       {% for name, masked in producers %}
-      <div class="feed-row">
+      <div class="list-row">
         <span class="name mono">{{ name }}</span>
-        <span class="chip neutral mono">{{ masked }}</span>
+        <span class="mono muted">{{ masked }}</span>
       </div>
       {% else %}
       <div class="empty">Продюсеров нет — задания в очередь класть некому.</div>

@@ -3,18 +3,18 @@
 {% block content %}
 
 <div class="status-bar">
-  <div style="display:flex;align-items:center;gap:10px">
-    <span class="dot live"></span>
+  <div class="row">
+    <span class="dot ok"></span>
     <span class="title">{{ health_title }}</span>
     <span class="card-note">{{ now_line }}</span>
   </div>
   <div class="items">
     {% for b in beats %}
-    <span class="status-item"><span class="dot {{ b.dot }}"></span>{{ b.label }} — {{ b.text }}</span>
+    <span class="status-item"><span class="dot {{ b.dot or 'ok' }}"></span>{{ b.label }} — {{ b.text }}</span>
     {% endfor %}
-    <span class="status-item"><span class="dot {{ '' if typst else 'warn' }}"></span>
+    <span class="status-item"><span class="dot {{ 'ok' if typst else 'warn' }}"></span>
       Typst {{ 'на месте' if typst else 'не найден' }}</span>
-    <span class="status-item"><span class="dot {{ '' if libreoffice else 'warn' }}"></span>
+    <span class="status-item"><span class="dot {{ 'ok' if libreoffice else 'warn' }}"></span>
       LibreOffice {{ 'на месте' if libreoffice else 'не найден' }}</span>
   </div>
 </div>
@@ -25,8 +25,8 @@
     <span class="sub">{{ today_line }}</span>
   </div>
   <div class="head-actions">
-    <a class="btn ghost" href="/ui/jobs">К очереди</a>
-    <a class="btn" href="/ui/render">Собрать документ</a>
+    <a class="btn" href="/ui/jobs">К очереди</a>
+    <a class="btn primary" href="/ui/render">{{ icon('file') }}Собрать документ</a>
   </div>
 </div>
 
@@ -34,9 +34,8 @@
   <div class="stat"><span class="label">В очереди</span><span class="value">{{ jobs.get('pending', 0) }}</span></div>
   <div class="stat"><span class="label">Выданы Doc-V</span><span class="value">{{ jobs.get('leased', 0) }}</span></div>
   <div class="stat"><span class="label">Подтверждено</span><span class="value">{{ jobs.get('acked', 0) }}</span></div>
-  <div class="stat"><span class="label">Файлов в хранилище</span><span class="value">{{ files_count }} <span class="muted" style="font-size:14px">({{ files_mb }} МБ)</span></span></div>
+  <div class="stat"><span class="label">Файлов в хранилище</span><span class="value">{{ files_count }}</span><span class="sub">{{ files_mb }} МБ</span></div>
   <div class="stat"><span class="label">Шаблонов Typst</span><span class="value">{{ templates_count }}</span></div>
-  <div class="stat"><span class="label">Операций в реестре</span><span class="value">{{ ops_count }}</span></div>
   <div class="stat"><span class="label">Отказов за сутки</span><span class="value">{{ denies }}</span></div>
 </div>
 
@@ -44,11 +43,11 @@
   <div class="card">
     <div class="card-head">
       <span class="card-title">Лента событий</span>
-      <span class="online"><span class="dot sm live"></span>журнал шлюза</span>
+      <span class="card-note">журнал шлюза</span>
     </div>
     {% for e in events %}
-    <div class="feed-row {{ 'hl' if loop.first }}">
-      <span class="dot {{ e.dot }}"></span>
+    <div class="list-row">
+      <span class="dot {{ e.dot or 'ok' }}"></span>
       <span class="time">{{ e.time }}</span>
       <span class="text">{{ e.text }}</span>
     </div>
@@ -57,18 +56,17 @@
     {% endfor %}
   </div>
 
-  <div style="display:flex;flex-direction:column;gap:20px">
+  <div class="stack">
     <div class="card">
       <div class="card-head">
         <span class="card-title">Связь с Doc-V</span>
         <span class="card-note">опрос каждые 30 секунд</span>
       </div>
       {% for b in beats %}
-      <div class="feed-row">
+      <div class="list-row">
         <span class="name">{{ b.label }}</span>
-        <span class="hint" style="white-space:nowrap">{{ b.clock }}</span>
-        <span class="status-item" style="color:var({{ '--brand-ink' if b.dot == '' else '--amber-800' }})">
-          <span class="dot {{ b.dot }}"></span>{{ b.text }}</span>
+        <span class="hint nowrap">{{ b.clock }}</span>
+        <span class="status-item"><span class="dot {{ b.dot or 'ok' }}"></span>{{ b.text }}</span>
       </div>
       {% endfor %}
       <div class="card-body card-note">Если «Опрос очереди» молчит дольше 90 секунд, планировщик задач на сервере Doc-V остановлен. Планировщик не попадает в экспорт конфигурации, поэтому следить за ним можно только здесь.</div>
@@ -80,13 +78,13 @@
         <span class="card-note">расшифровка UID</span>
       </div>
       {% for d in directories %}
-      <div class="feed-row">
+      <div class="list-row">
         <span class="name">
           {{ d.name }}
-          {% if d.columns %}<span class="hint" style="display:block;margin-top:3px">{{ d.columns }}</span>{% endif %}
+          {% if d.columns %}<span class="hint" style="display:block">{{ d.columns }}</span>{% endif %}
         </span>
-        <span class="chip neutral">{{ d.count }} записей</span>
-        <span class="hint" style="white-space:nowrap">{{ d.updated_at|dt }}</span>
+        <span class="count">{{ d.count }} записей</span>
+        <span class="hint nowrap">{{ d.updated_at|dt }}</span>
       </div>
       {% else %}
       <div class="empty">Пока не приходили. Прогоните отправку из «Шлюза».</div>

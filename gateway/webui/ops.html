@@ -7,8 +7,8 @@
     <span class="sub">каталог из ops.yaml — фиксированные команды без shell, параметры по regex</span>
   </div>
   <div class="head-actions">
-    <span class="chip neutral">операций: {{ ops|length }}</span>
-    <a class="btn" href="/ui/opsedit/new">＋ Новая операция</a>
+    <span class="count">операций: {{ ops|length }}</span>
+    <a class="btn primary" href="/ui/opsedit/new">{{ icon('plus') }}Новая операция</a>
   </div>
 </div>
 
@@ -16,23 +16,23 @@
 <div class="card">
   <div class="card-head">
     <span class="card-title">Результат: {{ result.op }}</span>
-    <span style="display:flex;gap:10px;align-items:center">
-      <span class="chip {{ 'success' if result.ok else 'danger' }}">{{ 'успешно' if result.ok else 'ошибка' }}</span>
+    <span class="row">
+      <span class="badge {{ 'success' if result.ok else 'danger' }}">{{ 'успешно' if result.ok else 'ошибка' }}</span>
       <span class="card-note">код выхода {{ result.exit_code }} · {{ result.duration_ms }} мс</span>
     </span>
   </div>
-  <div class="card-body">
+  <div class="card-body stack tight">
     {% if result.files %}
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+    <div class="row wrap">
       {% for f in result.files %}
-      <a class="btn" href="{{ f.download_url }}" target="_blank">{{ f.name }}</a>
-      <a class="btn ghost" data-copy="{{ f.download_url }}" href="#">копировать ссылку</a>
+      <a class="btn" href="{{ f.download_url }}" target="_blank">{{ icon('download') }}{{ f.name }}</a>
+      <a class="btn ghost" data-copy="{{ f.download_url }}" href="#">{{ icon('copy') }}<span data-label>копировать ссылку</span></a>
       {% endfor %}
     </div>
     {% endif %}
     {% if result.stdout %}<pre class="out">{{ result.stdout }}</pre>{% endif %}
-    {% if result.stderr %}<pre class="out" style="margin-top:8px">{{ result.stderr }}</pre>{% endif %}
-    {% if result.error %}<pre class="out" style="margin-top:8px">{{ result.error }}</pre>{% endif %}
+    {% if result.stderr %}<pre class="out">{{ result.stderr }}</pre>{% endif %}
+    {% if result.error %}<pre class="out">{{ result.error }}</pre>{% endif %}
   </div>
 </div>
 {% endif %}
@@ -42,13 +42,13 @@
 <div class="card">
   <div class="card-head">
     <span class="card-title">{{ name }}</span>
-    <span style="display:flex;gap:10px;align-items:center">
+    <span class="row">
       <span class="card-note">таймаут {{ op.timeout_sec }} с</span>
-      <a class="btn ghost sm" href="/ui/opsedit/{{ name }}">правка</a>
+      <a class="btn ghost sm" href="/ui/opsedit/{{ name }}">{{ icon('pencil') }}правка</a>
     </span>
   </div>
   <div class="card-body">
-    <div class="muted" style="font-size:13px">{{ op.description or "Без описания" }}</div>
+    <div class="muted text-sm">{{ op.description or "Без описания" }}</div>
     <form method="post" action="/ui/ops/{{ name }}">
       {% for pname, p in op.params.items() %}
         {% if p.type == 'str' %}
@@ -67,7 +67,9 @@
           </select>
         {% endif %}
       {% endfor %}
-      <button class="btn" style="margin-top:14px" data-busy="Выполняется…">Запустить</button>
+      <div class="form-actions">
+        <button class="btn primary" data-busy="Выполняется…">{{ icon('play') }}Запустить</button>
+      </div>
     </form>
   </div>
 </div>

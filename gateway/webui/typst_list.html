@@ -7,9 +7,9 @@
     <span class="sub">каждый шаблон — адрес <span class="mono">POST /render/typst/&lt;имя&gt;</span></span>
   </div>
   <div class="head-actions">
-    <form method="post" action="/ui/typst/create" style="display:flex;gap:8px;align-items:center">
-      <input type="text" name="name" placeholder="имя нового шаблона" style="width:230px">
-      <button class="btn" data-busy="Создаём…">Создать</button>
+    <form method="post" action="/ui/typst/create" class="row">
+      <input type="text" name="name" placeholder="имя нового шаблона" class="w-220">
+      <button class="btn primary" data-busy="Создаём…">{{ icon('plus') }}Создать</button>
     </form>
   </div>
 </div>
@@ -22,11 +22,11 @@
     </div>
     {% if rows %}
     <table>
-      <thead><tr><th>Имя</th><th class="num">Размер</th><th>Изменён</th></tr></thead>
+      <thead><tr><th>Имя</th><th class="num w-100">Размер</th><th class="w-180">Изменён</th></tr></thead>
       <tbody>
       {% for t in rows %}
       <tr>
-        <td><a class="strong" href="/ui/typst/{{ t.name }}">{{ t.name }}</a></td>
+        <td><a class="strong row" href="/ui/typst/{{ t.name }}">{{ icon('file') }}{{ t.name }}</a></td>
         <td class="num mono">{{ t.size }}</td>
         <td class="mono muted">{{ t.updated_at|dt }}</td>
       </tr>
@@ -43,7 +43,7 @@
     </div>
     {% if assets %}
     <table>
-      <thead><tr><th style="width:100px"></th><th>Имя</th><th class="num">Размер</th><th></th></tr></thead>
+      <thead><tr><th class="w-100"></th><th>Имя</th><th class="num w-100">Размер</th><th class="w-60"></th></tr></thead>
       <tbody>
       {% for a in assets %}
       <tr>
@@ -53,7 +53,7 @@
         <td><div class="actions">
           <form class="inline" method="post" action="/ui/typst/assets/delete/{{ a.name }}"
                 onsubmit="return confirm('Удалить картинку {{ a.name }}? Шаблоны, где она подключена, перестанут собираться.')">
-            <button class="btn danger sm" data-busy="…">удалить</button></form>
+            <button class="btn danger icon sm" title="Удалить" aria-label="Удалить" data-busy="…">{{ icon('trash') }}</button></form>
         </div></td>
       </tr>
       {% endfor %}
@@ -61,12 +61,11 @@
     </table>
     {% endif %}
     <div class="card-body">
-      <form method="post" action="/ui/typst/assets/upload" enctype="multipart/form-data"
-            style="display:flex;gap:8px;align-items:center">
+      <form method="post" action="/ui/typst/assets/upload" enctype="multipart/form-data" class="row">
         <input type="file" name="uploads" multiple accept=".png,.jpg,.jpeg,.gif,.svg">
-        <button class="btn ghost" data-busy="Загружаем…">Загрузить</button>
+        <button class="btn" data-busy="Загружаем…">{{ icon('upload') }}Загрузить</button>
       </form>
-      <div class="card-note" style="margin-top:10px">В шаблоне подключаются как
+      <div class="card-note mt-3">В шаблоне подключаются как
         <span class="mono">#image("assets/имя.png")</span>; фирменные бланки — через
         <span class="mono">organization.blank_filepath</span>.</div>
     </div>

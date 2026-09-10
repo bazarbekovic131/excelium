@@ -8,24 +8,23 @@
     <span class="sub">подписи под таблицей реестра, по порядку · {{ sets|length }} наборов</span>
   </div>
   <div class="head-actions">
-    <form method="post" action="/ui/signers/sets/new" style="display:flex;gap:6px">
-      <input type="text" name="name" placeholder="имя нового набора" required style="width:200px">
-      <button class="btn">＋ Набор</button>
+    <form method="post" action="/ui/signers/sets/new" class="row">
+      <input type="text" name="name" placeholder="имя нового набора" required class="w-220">
+      <button class="btn primary">{{ icon('plus') }}Набор</button>
     </form>
   </div>
 </div>
 
 {{ nav(tab) }}
-{% if flash %}<div class="flash {{ 'err' if flash_err }}">{{ flash }}</div>{% endif %}
 
 <div class="company-grid">
   {% for name, lines in sets.items() %}
   <div class="card">
     <div class="card-head">
-      <span class="card-title" style="text-transform:none;letter-spacing:0">{{ name }}</span>
-      <span style="display:flex;gap:8px;align-items:center">
-        <span class="chip neutral" title="правил ссылается на набор">{{ used.get(name, 0) }}</span>
-        <a class="btn ghost sm" href="/ui/signers/set/{{ name|urlencode }}">Открыть</a>
+      <span class="card-title">{{ name }}</span>
+      <span class="row">
+        <span class="count" title="правил ссылается на набор">{{ used.get(name, 0) }}</span>
+        <a class="btn sm" href="/ui/signers/set/{{ name|urlencode }}">Открыть</a>
       </span>
     </div>
     <div class="card-body">

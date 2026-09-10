@@ -7,10 +7,10 @@
     <span class="sub"><a href="/ui/typst">Шаблоны</a> · <span class="mono">POST /render/typst/{{ name }}</span></span>
   </div>
   <div class="head-actions">
-    {% if link %}<a class="btn" href="{{ link }}" target="_blank">Открыть PDF</a>{% endif %}
+    {% if link %}<a class="btn primary" href="{{ link }}" target="_blank">{{ icon('external') }}Открыть PDF</a>{% endif %}
     <form class="inline" method="post" action="/ui/typst/{{ name }}/delete"
           onsubmit="return confirm('Удалить шаблон {{ name }}?')">
-      <button class="btn danger">Удалить</button></form>
+      <button class="btn danger">{{ icon('trash') }}Удалить</button></form>
   </div>
 </div>
 
@@ -22,8 +22,10 @@
   <div class="card-body">
     <form method="post" action="/ui/typst/{{ name }}/save" data-hotkey-save>
       <textarea name="source" rows="24" spellcheck="false">{{ source }}</textarea>
-      <button class="btn" style="margin-top:14px" data-busy="Сохраняем…">Сохранить</button>
-      <span class="card-note" style="margin-left:12px">Ctrl+S сохраняет, не выходя из редактора</span>
+      <div class="form-actions">
+        <button class="btn primary" data-busy="Сохраняем…">{{ icon('save') }}Сохранить</button>
+        <span class="hint">Ctrl+S сохраняет, не выходя из редактора</span>
+      </div>
     </form>
   </div>
 </div>
@@ -32,20 +34,21 @@
   <div class="card">
     <div class="card-head">
       <span class="card-title">Пробный рендер</span>
-      {% if not typst %}<span class="chip warn">typst не найден</span>{% endif %}
+      {% if not typst %}<span class="badge warn">typst не найден</span>{% endif %}
     </div>
     <div class="card-body">
       <form method="post" action="/ui/typst/{{ name }}/test">
         <textarea name="data" rows="8">{{ test_data }}</textarea>
-        <button class="btn" style="margin-top:14px" data-busy="Собираем PDF…"
-                {{ 'disabled' if not typst }}>Собрать PDF</button>
-        <span class="card-note" style="margin-left:12px">Ctrl+Enter — тоже сборка</span>
+        <div class="form-actions">
+          <button class="btn primary" data-busy="Собираем PDF…" {{ 'disabled' if not typst }}>{{ icon('play') }}Собрать PDF</button>
+          <span class="hint">Ctrl+Enter — тоже сборка</span>
+        </div>
       </form>
-      {% if error %}<pre class="out" style="margin-top:12px">{{ error }}</pre>{% endif %}
+      {% if error %}<pre class="out mt-3">{{ error }}</pre>{% endif %}
     </div>
   </div>
 
-  <div style="display:flex;flex-direction:column;gap:20px">
+  <div class="stack">
     <div class="card">
       <div class="card-head"><span class="card-title">Доступные картинки</span></div>
       {% if assets %}
@@ -53,8 +56,8 @@
         <tbody>
         {% for a in assets %}
         <tr>
-          <td style="width:100px"><img class="thumb" src="/ui/typst/assets/raw/{{ a.name }}" alt=""></td>
-          <td class="mono" style="font-size:12px">#image("assets/{{ a.name }}")</td>
+          <td class="w-100"><img class="thumb" src="/ui/typst/assets/raw/{{ a.name }}" alt=""></td>
+          <td class="mono text-sm">#image("assets/{{ a.name }}")</td>
         </tr>
         {% endfor %}
         </tbody>
@@ -67,7 +70,7 @@
         <span class="card-note">{{ history|length }} версий</span></div>
       {% if history %}
       <table>
-        <thead><tr><th>Сохранена</th><th class="num">Размер</th><th></th></tr></thead>
+        <thead><tr><th>Сохранена</th><th class="num w-100">Размер</th><th class="w-100"></th></tr></thead>
         <tbody>
         {% for h in history %}
         <tr>
@@ -75,7 +78,7 @@
           <td class="num mono">{{ h.size }}</td>
           <td><div class="actions">
             <form class="inline" method="post" action="/ui/typst/{{ name }}/restore/{{ h.id }}">
-              <button class="btn ghost sm">вернуть</button></form>
+              <button class="btn sm">{{ icon('refresh') }}вернуть</button></form>
           </div></td>
         </tr>
         {% endfor %}

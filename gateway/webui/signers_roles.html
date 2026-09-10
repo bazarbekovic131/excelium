@@ -22,16 +22,15 @@
     <span class="sub">в каком качестве человек подписывает · {{ roles|length }} должностей, вакантных {{ stats.vacant }}</span>
   </div>
   <div class="head-actions">
-    <span class="chip neutral">в Структуре: {{ staff|length }} сотрудников</span>
-    <form method="post" action="/ui/signers/roles/link" style="display:inline">
-      <button class="btn ghost" data-busy="Сверяем…" title="Должностям с вписанным ФИО подобрать сотрудника Структуры по фамилии">Сопоставить по ФИО</button>
+    <span class="count">в Структуре: {{ staff|length }} сотрудников</span>
+    <form method="post" action="/ui/signers/roles/link" class="inline">
+      <button class="btn" data-busy="Сверяем…" title="Должностям с вписанным ФИО подобрать сотрудника Структуры по фамилии">{{ icon('refresh') }}Сопоставить по ФИО</button>
     </form>
-    <button class="btn" data-add-row form="rolesform">＋ Должность</button>
+    <button class="btn primary" data-add-row form="rolesform">{{ icon('plus') }}Должность</button>
   </div>
 </div>
 
 {{ nav(tab) }}
-{% if flash %}<div class="flash {{ 'err' if flash_err }}">{{ flash }}</div>{% endif %}
 
 <form method="post" action="/ui/signers/roles/save" id="rolesform">
 <div class="card">
@@ -41,13 +40,13 @@
   </div>
   <table id="rowlist">
     <thead><tr>
-      <th style="width:30px">№</th>
-      <th style="width:220px">Должность <span class="hint">ключ</span></th>
-      <th style="width:200px">Печатается как <span class="hint">пусто = ключ</span></th>
+      <th class="w-40">№</th>
+      <th class="w-300">Должность <span class="hint">ключ</span></th>
+      <th class="w-220">Печатается как <span class="hint">пусто = ключ</span></th>
       <th>Кто занимает</th>
-      <th style="width:170px">ФИО, если нет в Структуре</th>
-      <th style="width:70px">Подписей</th>
-      <th style="width:40px"></th>
+      <th class="w-180">ФИО, если нет в Структуре</th>
+      <th class="w-80">Подписей</th>
+      <th class="w-40"></th>
     </tr></thead>
     <tbody>
     {% for r in roles %}
@@ -55,20 +54,19 @@
       <td class="muted" data-num>{{ loop.index }}</td>
       <td><input type="hidden" name="old_name" value="{{ r.name }}">
         <input type="text" name="name" value="{{ r.name }}" required>
-        {% if r.vacant %}<span class="chip warn">вакантна</span>{% endif %}</td>
+        {% if r.vacant %}<span class="badge warn mt-1">вакантна</span>{% endif %}</td>
       <td><input type="text" name="title" value="{{ r.title if r.title != r.name else '' }}" placeholder="{{ r.name }}"></td>
       <td>{{ holder_picker(r.holder_uid) }}
-        {% if r.holder_uid and not r.in_structura %}<span class="chip danger">uid не найден в Структуре</span>{% endif %}</td>
+        {% if r.holder_uid and not r.in_structura %}<span class="badge danger mt-1">uid не найден в Структуре</span>{% endif %}</td>
       <td><input type="text" name="holder_name" value="{{ r.holder_name }}" placeholder="Фамилия И.О."></td>
-      <td><span class="chip neutral">{{ r.used }}</span></td>
+      <td><span class="count">{{ r.used }}</span></td>
       <td>
         {% if r.used %}
-        <span class="btn ghost sm" style="opacity:.4;cursor:not-allowed"
-              title="На должность ссылаются {{ r.used }} подписей">✕</span>
+        <span class="btn ghost icon sm disabled" title="На должность ссылаются {{ r.used }} подписей">{{ icon('x') }}</span>
         {% else %}
-        <button class="btn ghost sm" title="Удалить должность" formaction="/ui/signers/roles/delete"
-                name="delete" value="{{ r.name }}"
-                onclick="return confirm('Убрать «{{ r.name }}»? Несохранённые правки пропадут.')">✕</button>
+        <button class="btn ghost icon sm" title="Удалить должность" aria-label="Удалить должность"
+                formaction="/ui/signers/roles/delete" name="delete" value="{{ r.name }}"
+                onclick="return confirm('Убрать «{{ r.name }}»? Несохранённые правки пропадут.')">{{ icon('x') }}</button>
         {% endif %}
       </td>
     </tr>
@@ -77,9 +75,9 @@
   </table>
   <div class="card-body">
     <div class="empty" id="rowlist-empty" hidden>Каталог пуст.</div>
-    <div style="display:flex;gap:8px;align-items:center">
-      <button class="btn" data-busy="Сохраняем…">Сохранить</button>
-      <button class="btn ghost" data-add-row>＋ Должность</button>
+    <div class="row wrap">
+      <button class="btn primary" data-busy="Сохраняем…">Сохранить</button>
+      <button class="btn" data-add-row>{{ icon('plus') }}Должность</button>
       <span class="hint">Строка без ключа не сохраняется. Переименование ключа тянет за собой все подписи.</span>
     </div>
   </div>
@@ -94,8 +92,8 @@
     <td><input type="text" name="title" placeholder="Генеральный директор"></td>
     <td>{{ holder_picker('') }}</td>
     <td><input type="text" name="holder_name" placeholder="Фамилия И.О."></td>
-    <td><span class="chip neutral">0</span></td>
-    <td><button class="btn ghost sm" data-drop-row title="Убрать строку">✕</button></td>
+    <td><span class="count">0</span></td>
+    <td><button class="btn ghost icon sm" data-drop-row title="Убрать строку" aria-label="Убрать строку">{{ icon('x') }}</button></td>
   </tr>
 </template>
 {% endblock %}

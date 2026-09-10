@@ -8,13 +8,12 @@
     <span class="sub">подписи под таблицей реестра, сверху вниз · используют {{ used }} правил</span>
   </div>
   <div class="head-actions">
-    <a class="btn ghost" href="/ui/signers/sets">← Ко всем наборам</a>
-    <button class="btn" data-add-row form="setform">＋ Добавить подпись</button>
+    <a class="btn" href="/ui/signers/sets">{{ icon('arrow-left') }}Ко всем наборам</a>
+    <button class="btn primary" data-add-row form="setform">{{ icon('plus') }}Добавить подпись</button>
   </div>
 </div>
 
 {{ nav(tab) }}
-{% if flash %}<div class="flash {{ 'err' if flash_err }}">{{ flash }}</div>{% endif %}
 
 <form method="post" action="/ui/signers/set/{{ name|urlencode }}/save" id="setform">
 <div class="card">
@@ -24,34 +23,34 @@
   </div>
   <table id="rowlist">
     <thead><tr>
-      <th style="width:30px">№</th><th style="width:360px">Должность</th>
-      <th>Компания в подписи</th><th style="width:140px">Заголовок над подписью</th>
-      <th style="width:180px">Пропустить при затратах</th>
-      <th style="width:104px"></th>
+      <th class="w-40">№</th><th class="w-360">Должность</th>
+      <th>Компания в подписи</th><th class="w-150">Заголовок над подписью</th>
+      <th class="w-180">Пропустить при затратах</th>
+      <th class="w-100"></th>
     </tr></thead>
     <tbody>
     {% for row in rows %}
     <tr>
       <td class="muted" data-num>{{ loop.index }}</td>
       <td>{{ role_picker('role', roles, row.role, empty='— убрать строку —') }}
-        {% if row.missing %}<span class="chip danger">должности «{{ row.role }}» больше нет</span>{% endif %}</td>
+        {% if row.missing %}<span class="badge danger">должности «{{ row.role }}» больше нет</span>{% endif %}</td>
       <td><input type="text" name="print_company" value="{{ row.print_company }}"></td>
       <td><input type="text" name="mark" value="{{ row.mark }}"></td>
       <td><input type="text" name="skip_expense_types" value="{{ row.skip_expense_types }}"></td>
-      <td style="white-space:nowrap">
-        <button class="btn ghost sm" data-move-row="up" title="Выше">↑</button>
-        <button class="btn ghost sm" data-move-row="down" title="Ниже">↓</button>
-        <button class="btn ghost sm" data-drop-row title="Убрать">✕</button>
-      </td>
+      <td><div class="actions">
+        <button class="btn ghost icon sm" data-move-row="up" title="Выше" aria-label="Выше">{{ icon('arrow-up') }}</button>
+        <button class="btn ghost icon sm" data-move-row="down" title="Ниже" aria-label="Ниже">{{ icon('arrow-down') }}</button>
+        <button class="btn ghost icon sm" data-drop-row title="Убрать" aria-label="Убрать">{{ icon('x') }}</button>
+      </div></td>
     </tr>
     {% endfor %}
     </tbody>
   </table>
   <div class="card-body">
     <div class="empty" id="rowlist-empty" hidden>Подписей нет. Добавьте первую.</div>
-    <div style="display:flex;gap:8px;align-items:center">
-      <button class="btn" data-busy="Сохраняем…">Сохранить набор</button>
-      <button class="btn ghost" data-add-row>＋ Добавить подпись</button>
+    <div class="row wrap">
+      <button class="btn primary" data-busy="Сохраняем…">Сохранить набор</button>
+      <button class="btn" data-add-row>{{ icon('plus') }}Добавить подпись</button>
       <span class="hint">Порядок строк — порядок подписей в реестре. Виды затрат — через запятую.</span>
     </div>
   </div>
@@ -59,9 +58,9 @@
 </form>
 
 {% if rows and not used %}
-<form method="post" action="/ui/signers/set/{{ name|urlencode }}/delete" style="margin-top:10px"
+<form method="post" action="/ui/signers/set/{{ name|urlencode }}/delete"
       onsubmit="return confirm('Удалить набор {{ name }}?')">
-  <button class="btn ghost">Удалить набор</button>
+  <button class="btn danger">{{ icon('trash') }}Удалить набор</button>
 </form>
 {% endif %}
 
@@ -72,11 +71,11 @@
     <td><input type="text" name="print_company"></td>
     <td><input type="text" name="mark"></td>
     <td><input type="text" name="skip_expense_types"></td>
-    <td style="white-space:nowrap">
-      <button class="btn ghost sm" data-move-row="up" title="Выше">↑</button>
-      <button class="btn ghost sm" data-move-row="down" title="Ниже">↓</button>
-      <button class="btn ghost sm" data-drop-row title="Убрать">✕</button>
-    </td>
+    <td><div class="actions">
+      <button class="btn ghost icon sm" data-move-row="up" title="Выше" aria-label="Выше">{{ icon('arrow-up') }}</button>
+      <button class="btn ghost icon sm" data-move-row="down" title="Ниже" aria-label="Ниже">{{ icon('arrow-down') }}</button>
+      <button class="btn ghost icon sm" data-drop-row title="Убрать" aria-label="Убрать">{{ icon('x') }}</button>
+    </div></td>
   </tr>
 </template>
 {% endblock %}

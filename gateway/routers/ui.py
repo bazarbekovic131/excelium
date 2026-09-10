@@ -15,6 +15,7 @@ from fastapi import APIRouter, Form, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 
 from ..config import APP_DIR
 from ..logging_setup import audit_log
@@ -32,8 +33,20 @@ router = APIRouter()
 templates = Jinja2Templates(directory=APP_DIR / "gateway" / "webui")
 # Стили встраиваются в страницу: отдельный статический файл не годится —
 # страница входа отдаётся до проверки cookie, и запрос за CSS получил бы отказ.
-DS_CSS = (APP_DIR / "gateway" / "webui" / "ds.css").read_text(encoding="utf-8")
+# Читается один раз при старте: после правки ds.css нужен перезапуск юнита.
+# Markup — иначе автоэкранирование Jinja превращает кавычки в &#34; прямо
+# внутри <style>, и весь font-стек с "Segoe UI" становится невалидным.
+DS_CSS = Markup((APP_DIR / "gateway" / "webui" / "ds.css").read_text(encoding="utf-8"))
 templates.env.globals["ds_css"] = DS_CSS
+
+
+def _icon(name: str, cls: str = "") -> Markup:
+    """Иконка из спрайта _icons.html: {{ icon('plus') }} в любом шаблоне."""
+    return Markup(f'<svg class="i {cls}" width="16" height="16" aria-hidden="true"'
+                  f' focusable="false"><use href="#i-{name}"/></svg>')
+
+
+templates.env.globals["icon"] = _icon
 
 
 def _dt(value, with_time: bool = True) -> str:

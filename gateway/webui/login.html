@@ -1,31 +1,26 @@
-<!doctype html>
-<html lang="ru">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Вход — Doc-V Gateway</title>
-<style>{{ ds_css }}
-body { display:flex; min-height:100vh; align-items:center; justify-content:center; }
-.login { width:380px; }
-.login .card-body { padding:28px 32px 32px; }
-.brandline { display:flex; align-items:center; gap:.4em; font:700 18px/1 var(--font-sans);
-             color:var(--brand-ink); margin-bottom:6px; }
-.login h1 { font:600 20px/1 var(--font-sans); color:var(--text-strong); margin:14px 0 4px; }
-.login p { font:400 13px/1.4 var(--font-sans); color:var(--text-muted); margin:0 0 18px; }
-.login .btn { width:100%; height:42px; margin-top:14px; }
-.err-line { margin-top:12px; font:500 13px/1.4 var(--font-sans); color:var(--chip-danger-ink); }
+{% extends "base.html" %}
+{% block title %}Вход — Doc-V Gateway{% endblock %}
+{% block head %}
+<style>
+  body { display:flex; min-height:100vh; align-items:center; justify-content:center; background:var(--bg-subtle); }
+  .login { width:360px; }
+  .login .card-body { padding:var(--sp-6); }
+  .login .wordmark { margin-bottom:var(--sp-4); }
+  .login h1 { font:600 var(--fs-lg)/1.3 var(--font-sans); margin-bottom:var(--sp-1); }
+  .login p { margin:0 0 var(--sp-4); font-size:var(--fs-sm); color:var(--fg-muted); }
+  .login .btn { width:100%; margin-top:var(--sp-3); }
+  .login .notice { margin-top:var(--sp-3); }
 </style>
-</head>
-<body>
+{% endblock %}
+{% block body %}
 <form class="card login" method="post" action="/ui/login">
   <div class="card-body">
-    <div class="brandline"><span aria-hidden="true">◢</span>DOC-V GATEWAY</div>
+    <div class="wordmark">{{ icon('logo') }}Doc-V Gateway</div>
     <h1>Вход в панель</h1>
     <p>Доступ по админ-токену из <span class="mono">.env</span> сервиса.</p>
     <input type="password" name="token" placeholder="Админ-токен" autofocus>
-    <button class="btn">Войти</button>
-    {% if error %}<div class="err-line">{{ error }}</div>{% endif %}
+    <button class="btn primary">Войти</button>
+    {% if error %}<div class="notice err">{{ icon('alert') }}<span>{{ error }}</span></div>{% endif %}
   </div>
 </form>
-</body>
-</html>
+{% endblock %}

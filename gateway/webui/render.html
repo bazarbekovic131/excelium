@@ -6,8 +6,10 @@
     <h1>Рендер</h1>
     <span class="sub">собрать документ из JSON — тем же путём, каким это делает Doc-V</span>
   </div>
-  {% if link %}<div class="head-actions"><a class="btn" href="{{ link }}" target="_blank">Открыть {{ link_name }}</a>
-    <a class="btn ghost" href="{{ link }}" download>Скачать</a></div>{% endif %}
+  {% if link %}<div class="head-actions">
+    <a class="btn primary" href="{{ link }}" target="_blank">{{ icon('external') }}Открыть {{ link_name }}</a>
+    <a class="btn" href="{{ link }}" download>{{ icon('download') }}Скачать</a>
+  </div>{% endif %}
 </div>
 
 <div class="grid-half">
@@ -26,7 +28,9 @@
         </select>
         <label>JSON</label>
         <textarea name="data" rows="14">{{ sample }}</textarea>
-        <button class="btn" style="margin-top:14px" data-busy="Собираем реестр…">Собрать</button>
+        <div class="form-actions">
+          <button class="btn primary" data-busy="Собираем реестр…">{{ icon('play') }}Собрать</button>
+        </div>
       </form>
     </div>
   </div>
@@ -34,7 +38,7 @@
   <div class="card">
     <div class="card-head">
       <span class="card-title">Typst → PDF</span>
-      {% if not typst %}<span class="chip warn">typst не найден</span>{% endif %}
+      {% if not typst %}<span class="badge warn">typst не найден</span>{% endif %}
     </div>
     <div class="card-body">
       {% if typst_templates %}
@@ -45,8 +49,9 @@
         </select>
         <label>Данные (JSON) <span class="hint">Ctrl+Enter отправляет</span></label>
         <textarea name="data" rows="10">{{ typst_data }}</textarea>
-        <button class="btn" style="margin-top:14px" data-busy="Собираем PDF…"
-                {{ 'disabled' if not typst }}>Собрать PDF</button>
+        <div class="form-actions">
+          <button class="btn primary" data-busy="Собираем PDF…" {{ 'disabled' if not typst }}>{{ icon('play') }}Собрать PDF</button>
+        </div>
       </form>
       {% else %}<div class="muted">Шаблонов нет — создайте на странице «Шаблоны».</div>{% endif %}
     </div>

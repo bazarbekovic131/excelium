@@ -8,13 +8,12 @@
     <span class="sub">{{ rules|length }} правил · утверждающий у компании один на все объекты</span>
   </div>
   <div class="head-actions">
-    <a class="btn ghost" href="/ui/signers">← Ко всем компаниям</a>
-    <a class="btn" href="/ui/signers/rule/new?company={{ company|urlencode }}">＋ Правило для объекта</a>
+    <a class="btn" href="/ui/signers">{{ icon('arrow-left') }}Ко всем компаниям</a>
+    <a class="btn primary" href="/ui/signers/rule/new?company={{ company|urlencode }}">{{ icon('plus') }}Правило для объекта</a>
   </div>
 </div>
 
 {{ nav(tab) }}
-{% if flash %}<div class="flash {{ 'err' if flash_err }}">{{ flash }}</div>{% endif %}
 
 <div class="card">
   <div class="card-head">
@@ -25,33 +24,31 @@
     <form method="post" action="/ui/signers/company/apply">
       <input type="hidden" name="company" value="{{ company }}">
       {% for role, title in (('utverzhdayu', 'УТВЕРЖДАЮ — справа сверху'), ('soglasovano', 'СОГЛАСОВАНО — слева сверху')) %}
-      <div style="padding-top:12px{% if not loop.first %};border-top:1px solid var(--line){% endif %}">
-        <label style="display:flex;gap:8px;align-items:center">
-          <input type="checkbox" name="apply_{{ role }}" value="1"
-                 style="width:auto;height:auto;box-shadow:none">
+      <div class="{{ 'field-group' if not loop.first }}">
+        <label class="check">
+          <input type="checkbox" name="apply_{{ role }}" value="1">
           {{ title }}
         </label>
-        <div class="grid-half">
+        <div class="grid-half mt-2">
           {{ role_picker(role ~ '_role', roles, base[role ~ '_role']) }}
           <input type="text" name="{{ role }}_company" placeholder="компания в подписи"
                  value="{{ base[role ~ '_company'] or company }}">
         </div>
       </div>
       {% endfor %}
-      <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--line)">
-        <label style="display:flex;gap:8px;align-items:center">
-          <input type="checkbox" name="apply_set" value="1"
-                 style="width:auto;height:auto;box-shadow:none">
+      <div class="field-group">
+        <label class="check">
+          <input type="checkbox" name="apply_set" value="1">
           Набор согласующих
         </label>
-        <select name="set_name">
+        <select name="set_name" class="mt-2">
           {% for name in set_names %}
           <option value="{{ name }}" {{ 'selected' if name == base.set_name }}>{{ name }}</option>
           {% endfor %}
         </select>
       </div>
-      <div style="display:flex;gap:8px;margin-top:16px;align-items:center">
-        <button class="btn" data-busy="Применяем…">Применить ко всем {{ rules|length }}</button>
+      <div class="form-actions">
+        <button class="btn primary" data-busy="Применяем…">Применить ко всем {{ rules|length }}</button>
         <span class="hint">Ничего не отмечено — ничего и не изменится.</span>
       </div>
     </form>
@@ -66,7 +63,7 @@
   <table>
     <thead><tr>
       <th>Объект</th><th>Согласовано</th><th>Утверждаю</th>
-      <th style="width:110px">Набор</th><th style="width:70px"></th>
+      <th class="w-120">Набор</th><th class="w-80"></th>
     </tr></thead>
     <tbody>
     {% for b in rules %}
@@ -75,7 +72,7 @@
       <td>{% if b.left %}<b>{{ b.left.fio }}</b><br><span class="hint">{{ b.left.position }}</span>{% else %}—{% endif %}</td>
       <td>{% if b.right %}<b>{{ b.right.fio }}</b><br><span class="hint">{{ b.right.position }}</span>{% else %}—{% endif %}</td>
       <td><a href="/ui/signers/set/{{ b.set_name|urlencode }}">{{ b.set_name }}</a></td>
-      <td><a class="btn ghost sm" href="/ui/signers/rule/{{ b.id }}">правка</a></td>
+      <td><a class="btn ghost sm" href="/ui/signers/rule/{{ b.id }}">{{ icon('pencil') }}правка</a></td>
     </tr>
     {% endfor %}
     </tbody>

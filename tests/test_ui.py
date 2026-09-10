@@ -261,7 +261,7 @@ def test_api_console_calls_own_endpoint(client):
     assert r.status_code == 200
     # Jinja экранирует кавычки, поэтому сравниваем по содержимому
     assert "status" in r.text and "ok" in r.text
-    assert 'class="chip success">200' in r.text
+    assert 'class="badge success">200' in r.text
     assert "curl -X GET" in r.text
     assert client.app.state.apilog.items()[0]["path"] == "/health"
 
@@ -479,3 +479,27 @@ def test_roles_link_without_structura_says_so(client):
     _login(client)
     r = client.post("/ui/signers/roles/link", follow_redirects=True)
     assert "Выгрузите её" in r.text
+
+
+def test_every_page_renders_clean(client):
+    """Редизайн: ни одной страницы со старыми глифами-иконками, спрайт
+    подключён, неопределённых переменных CSS нет."""
+    glyphs = "＋✕◢↑↓✓"
+    login = client.get("/ui/login")
+    assert login.status_code == 200 and '<svg xmlns="http://www.w3.org/2000/svg" style="display:none"' in login.text
+    _login(client)
+    pages = ["/ui", "/ui/jobs", "/ui/files", "/ui/ops", "/ui/render", "/ui/api",
+             "/ui/settings", "/ui/typst", "/ui/signers", "/ui/signers/sets",
+             "/ui/signers/roles", "/ui/signers/rule/new", "/ui/signers/set/list_1",
+             "/ui/opsedit/new"]
+    company = client.app.state.signers.rules()[0]["company"]
+    pages.append("/ui/signers/company?name=" + company)
+    for url in pages:
+        r = client.get(url)
+        assert r.status_code == 200, url
+        assert not any(g in r.text for g in glyphs), (url, [g for g in glyphs if g in r.text])
+        assert '<svg xmlns="http://www.w3.org/2000/svg" style="display:none"' in r.text, url
+        for var in ("var(--surface)", "var(--line)", "var(--brand", "var(--slate", "var(--text-"):
+            assert var not in r.text, (url, var)
+        # CSS вклеен как есть: кавычки в font-стеке не экранированы
+        assert '"Segoe UI"' in r.text and "&#34;Segoe UI" not in r.text, url
